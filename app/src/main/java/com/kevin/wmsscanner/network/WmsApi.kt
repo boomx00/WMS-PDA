@@ -6,6 +6,12 @@ import retrofit2.http.POST
 import retrofit2.http.PATCH
 import retrofit2.http.GET
 import retrofit2.http.Query
+
+data class LoginRequest(val username: String, val password: String)
+data class LoginResponse(val id: Int, val username: String, val roleId: Int)
+data class ConfirmInboundRequest(val label: String, val locationCode: String)
+data class ShipRequest(val soNumber: String, val label: String, val quantity: Int)
+data class ApiError(val error: String)
 data class PalletLookupResponse(val label: String, val quantity: Int)
 data class AssignCheckerRequest(val soNumber: String)
 
@@ -14,11 +20,6 @@ data class SessionSummary(
     val orderDate: String,
     val status: String
 )
-data class LoginRequest(val username: String, val password: String)
-data class LoginResponse(val id: Int, val username: String, val roleId: Int)
-data class ConfirmInboundRequest(val label: String, val locationCode: String)
-data class ShipRequest(val soNumber: String, val label: String, val quantity: Int)
-data class ApiError(val error: String)
 data class MoveRequest(
     val label: String,
     val currentLocationCode: String,
@@ -101,13 +102,7 @@ interface WmsApi {
         @Query("label") label: String,
         @Query("locationCode") locationCode: String
     ): Response<PalletLookupResponse>
-    data class AssignCheckerRequest(val soNumber: String)
-
-    data class SessionSummary(
-        val soNumber: String,
-        val orderDate: String,
-        val status: String
-    )
+  
 
     // ...inside the existing WmsApi interface, add these two:
     @PATCH("api/sales-orders/assign-checker")
