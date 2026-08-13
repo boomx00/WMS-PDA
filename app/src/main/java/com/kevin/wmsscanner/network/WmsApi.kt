@@ -102,7 +102,7 @@ interface WmsApi {
         @Query("label") label: String,
         @Query("locationCode") locationCode: String
     ): Response<PalletLookupResponse>
-  
+
 
     // ...inside the existing WmsApi interface, add these two:
     @PATCH("api/sales-orders/assign-checker")
