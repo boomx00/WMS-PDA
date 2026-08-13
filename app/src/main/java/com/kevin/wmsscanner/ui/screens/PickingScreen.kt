@@ -1,8 +1,10 @@
 package com.kevin.wmsscanner.ui.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -14,16 +16,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.kevin.wmsscanner.ScanBus
+import com.kevin.wmsscanner.network.MoveRequest
 import com.kevin.wmsscanner.network.NetworkModule
-import com.kevin.wmsscanner.network.RemoveRequest
 import com.kevin.wmsscanner.ui.components.CameraScanButton
 import kotlinx.coroutines.launch
 import org.json.JSONObject
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 
 @Composable
-fun OutboundScreen(navController: NavHostController) {
+fun PickingScreen(navController: NavHostController) {
     var labelInput by remember { mutableStateOf("") }
     var locationInput by remember { mutableStateOf("") }
     var quantityInput by remember { mutableStateOf("") }
@@ -61,9 +61,9 @@ fun OutboundScreen(navController: NavHostController) {
             .verticalScroll(rememberScrollState())
             .padding(24.dp)
     ) {
-        Text("Outbound", style = MaterialTheme.typography.headlineMedium)
+        Text("Picking", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Pallet leaves the warehouse \u2014 from Floor or Rack",
+            "Rack/Floor \u2192 Outbound Warehouse",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -117,7 +117,7 @@ fun OutboundScreen(navController: NavHostController) {
             OutlinedTextField(
                 value = quantityInput,
                 onValueChange = { quantityInput = it.filter { c -> c.isDigit() } },
-                label = { Text("Quantity (default stock, not a tracked pallet)") },
+                label = { Text("Quantity") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                 modifier = Modifier
@@ -144,16 +144,17 @@ fun OutboundScreen(navController: NavHostController) {
                 loading = true
                 scope.launch {
                     try {
-                        val response = NetworkModule.api.removePallet(
-                            RemoveRequest(
+                        val response = NetworkModule.api.movePallet(
+                            MoveRequest(
                                 label = labelInput.trim(),
-                                locationCode = locationInput.trim(),
+                                currentLocationCode = locationInput.trim(),
+                                newLocationCode = "OUTBOUND_WH",
                                 quantity = quantityInput.toIntOrNull()
                             )
                         )
                         loading = false
                         if (response.isSuccessful) {
-                            success = "Removed ${labelInput.trim()} from ${locationInput.trim()}"
+                            success = "Moved ${labelInput.trim()} to Outbound Warehouse"
                             labelInput = ""
                             locationInput = ""
                             quantityInput = ""
@@ -162,14 +163,21 @@ fun OutboundScreen(navController: NavHostController) {
                         } else {
                             val errBody = response.errorBody()?.string()
                             val json = try { JSONObject(errBody ?: "{}") } catch (e: Exception) { JSONObject() }
-                            if (json.optString("matchType") == "default_needs_quantity") {
-                                needsQuantity = true
-                                error = "${json.optString("error")} (${json.optInt("availableQuantity")} available)"
-                            } else if (json.optString("matchType") == "untracked_outbound_needs_quantity") {
-                                needsQuantity = true
-                                error = json.optString("error")
-                            } else {
-                                error = "Failed: ${json.optString("error", errBody ?: "unknown error")}"
+                            when (json.optString("matchType")) {
+                                "default_needs_quantity" -> {
+                                    needsQuantity = true
+                                    error = "${json.optString("error")} (${json.optInt("availableQuantity")} available)"
+                                }
+                                "auto_inbound_needs_quantity" -> {
+                                    needsQuantity = true
+                                    error = json.optString("error")
+                                }
+                                "already_exists_elsewhere" -> {
+                                    error = "\u26A0\uFE0F ${json.optString("error")}"
+                                }
+                                else -> {
+                                    error = "Failed: ${json.optString("error", errBody ?: "unknown error")}"
+                                }
                             }
                         }
                     } catch (e: Exception) {
@@ -179,10 +187,9 @@ fun OutboundScreen(navController: NavHostController) {
                 }
             },
             enabled = !loading && labelInput.isNotBlank() && locationInput.isNotBlank(),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
             modifier = Modifier.fillMaxWidth().height(56.dp)
         ) {
-            Text(if (loading) "Removing..." else "Confirm Outbound")
+            Text(if (loading) "Moving..." else "Confirm Picking")
         }
 
         Spacer(modifier = Modifier.height(12.dp))

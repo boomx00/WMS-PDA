@@ -11,6 +11,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.kevin.wmsscanner.ui.screens.*
+import androidx.navigation.navArgument
+import androidx.navigation.NavType
+
 
 class MainActivity : ComponentActivity() {
     private val scanReceiver = ScanReceiver()
@@ -49,11 +52,23 @@ fun WmsApp() {
         composable("login") { LoginScreen(navController) }
         composable("home") { HomeScreen(navController) }
         composable("inbound") { InboundScreen(navController) }
-        composable("outbound") { OutboundScreen(navController) }
+        composable("outbound_menu") { OutboundMenuScreen(navController) }
+        composable("picking") { PickingScreen(navController) }
         composable("move_menu") { MoveMenuScreen(navController) }
         composable("move_in") { MoveInScreen(navController) }
         composable("move_out") { MoveOutScreen(navController) }
         composable("move_rack_to_rack") { MoveRackToRackScreen(navController) }
         composable("confirm_inbound") { ConfirmInboundScreen(navController) }
+        composable("logout") { LogoutScreen(navController) }
+        composable("shipping_sessions") { ShippingSessionsScreen(navController) }
+        composable(
+            "ship_session/{soNumber}",
+            arguments = listOf(navArgument("soNumber") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val soNumber = backStackEntry.arguments?.getString("soNumber") ?: ""
+            ShipSessionScreen(navController, soNumber)
+        }
+        composable("update_check") { UpdateCheckScreen(navController) }
+        composable("check_so") { CheckSoScreen(navController) }
     }
 }

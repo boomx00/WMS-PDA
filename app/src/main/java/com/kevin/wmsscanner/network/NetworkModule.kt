@@ -20,6 +20,10 @@ object NetworkModule {
         level = HttpLoggingInterceptor.Level.BODY
     }
 
+    fun clearCookies() {
+        cookieManager.cookieStore.removeAll()
+    }
+
     private val okHttpClient = OkHttpClient.Builder()
         .cookieJar(JavaNetCookieJar(cookieManager))
         .addInterceptor(loggingInterceptor)

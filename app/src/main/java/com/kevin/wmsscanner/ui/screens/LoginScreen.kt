@@ -68,7 +68,7 @@ fun LoginScreen(navController: NavHostController) {
                         if (response.isSuccessful && response.body() != null) {
                             val body = response.body()!!
                             SessionManager.setSession(body.id, body.username)
-                            navController.navigate("home") {
+                            navController.navigate("update_check") {
                                 popUpTo("login") { inclusive = true }
                             }
                         } else {
