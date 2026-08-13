@@ -101,9 +101,5 @@ interface WmsApi {
         @Query("label") label: String,
         @Query("locationCode") locationCode: String
     ): Response<PalletLookupResponse>
-    @PATCH("api/sales-orders/assign-checker")
-    suspend fun assignChecker(@Body request: AssignCheckerRequest): Response<Unit>
 
-    @GET("api/sales-orders/my-sessions")
-    suspend fun getMySessions(): Response<List<SessionSummary>>
 }
