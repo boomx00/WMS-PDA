@@ -101,5 +101,18 @@ interface WmsApi {
         @Query("label") label: String,
         @Query("locationCode") locationCode: String
     ): Response<PalletLookupResponse>
+    data class AssignCheckerRequest(val soNumber: String)
 
+    data class SessionSummary(
+        val soNumber: String,
+        val orderDate: String,
+        val status: String
+    )
+
+    // ...inside the existing WmsApi interface, add these two:
+    @PATCH("api/sales-orders/assign-checker")
+    suspend fun assignChecker(@Body request: AssignCheckerRequest): Response<Unit>
+
+    @GET("api/sales-orders/my-sessions")
+    suspend fun getMySessions(): Response<List<SessionSummary>>
 }
