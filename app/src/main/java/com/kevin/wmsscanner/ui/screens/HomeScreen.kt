@@ -45,7 +45,8 @@ fun HomeScreen(navController: NavHostController) {
         MenuButton("MOVE") { navController.navigate("move_menu") }
         Spacer(modifier = Modifier.height(12.dp))
         MenuButton("CONFIRM INBOUND") { navController.navigate("confirm_inbound") }
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+        MenuButton("Stock Opname") {navController.navigate("stock_opname") }
 
         OutlinedButton(
             onClick = { navController.navigate("logout") },

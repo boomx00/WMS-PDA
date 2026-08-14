@@ -63,6 +63,24 @@ fun WmsApp() {
         composable("update_check") { UpdateCheckScreen(navController) }
         composable("check_so") { CheckSoScreen(navController) }
         composable("shipping_sessions") { ShippingSessionsScreen(navController) }
+        composable("picking_v2") { PickingV2Screen(navController) }
+        composable("shipping_sessions_v2") { ShippingSessionsV2Screen(navController) }
+        composable("picking_so_entry") { PickingSoEntryScreen(navController) }
+        composable("stock_opname"){StockOpnameScreen(navController)}
+        composable(
+            "picking_so_list/{soNumber}",
+            arguments = listOf(navArgument("soNumber") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val soNumber = backStackEntry.arguments?.getString("soNumber") ?: ""
+            SoPickingListScreen(navController, soNumber)
+        }
+        composable(
+            "ship_session_v2/{soNumber}",
+            arguments = listOf(navArgument("soNumber") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val soNumber = backStackEntry.arguments?.getString("soNumber") ?: ""
+            ShipSessionV2Screen(navController, soNumber)
+        }
         composable(
             "ship_session/{soNumber}",
             arguments = listOf(navArgument("soNumber") { type = NavType.StringType })

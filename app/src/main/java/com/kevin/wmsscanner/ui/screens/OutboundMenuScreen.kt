@@ -22,10 +22,12 @@ fun OutboundMenuScreen(navController: NavHostController) {
     ) {
         Text(text = "Outbound", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(40.dp))
-
-        MenuButton("PICKING (Rack/Floor \u2192 Outbound WH)") { navController.navigate("picking") }
+        MenuButton("PICKING (v2 \u2014 by SO)") { navController.navigate("picking_so_entry") }
         Spacer(modifier = Modifier.height(12.dp))
-        MenuButton("SHIP (Outbound WH \u2192 Gone)") { navController.navigate("ship") }
+        MenuButton("SHIP SESSION (v2)") { navController.navigate("shipping_sessions_v2") }
+//        MenuButton("PICKING (Rack/Floor \u2192 Outbound WH)") { navController.navigate("picking") }
+//        Spacer(modifier = Modifier.height(12.dp))
+//        MenuButton("SHIP (Outbound WH \u2192 Gone)") { navController.navigate("ship") }
         Spacer(modifier = Modifier.height(12.dp))
         MenuButton("SHIP (SESSION)") { navController.navigate("shipping_sessions") }
         Spacer(modifier = Modifier.height(12.dp))

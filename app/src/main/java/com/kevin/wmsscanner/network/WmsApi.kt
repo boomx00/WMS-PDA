@@ -14,7 +14,26 @@ data class ShipRequest(val soNumber: String, val label: String, val quantity: In
 data class ApiError(val error: String)
 data class PalletLookupResponse(val label: String, val quantity: Int)
 data class AssignCheckerRequest(val soNumber: String)
-
+data class LocationStockItem(
+    val itemId: Int,
+    val itemSku: String,
+    val itemName: String,
+    val palletCartonQty: Int,
+    val quantity: Int
+)
+data class LocationStockLookupResponse(val locationCode: String, val locationType: String, val stock: List<LocationStockItem>)
+data class PickResponse(val locationCode: String, val itemSku: String, val quantityPicked: Int)
+data class ShipV2Request(val soNumber: String, val label: String, val quantity: Int)
+data class ShipV2Response(val itemSku: String, val quantityShipped: Int, val remainingOnOrder: Int)
+data class BarcodeItemLookupResponse(val sku: String, val name: String, val palletCartonQty: Int)
+data class LabelStockLookupResponse(
+    val itemSku: String,
+    val itemName: String,
+    val quantity: Int,
+    val orderedQty: Int? = null,
+    val alreadyShipped: Int? = null,
+    val remaining: Int? = null
+)
 data class SessionSummary(
     val soNumber: String,
     val orderDate: String,
@@ -45,7 +64,13 @@ data class InboundRequest(
     val workOrderNumber: String,
     val quantity: Int
 )
-
+data class PickRequest(
+    val locationCode: String,
+    val itemSku: String,
+    val quantity: Int,
+    val sourceUntracked: Boolean? = null,
+    val soNumber: String? = null
+)
 data class PalletResponse(
     val id: Int,
     val label: String,
@@ -69,7 +94,23 @@ data class SoLookupResponse(
     val items: List<SoLookupLine>
 )
 
+data class PickSummaryLine(
+    val itemId: Int,
+    val itemSku: String,
+    val itemName: String,
+    val palletCartonQty: Int,
+    val orderedQty: Int,
+    val pickedQty: Int,
+    val remaining: Int
+)
+data class SalesOrder(
+    val id: Int,
+    val soNumber: String,
+    val orderDate: String
+)
+data class OpenSalesOrder(val soNumber: String, val orderDate: String, val status: String)
 
+data class PickSummaryResponse(val soNumber: String, val items: List<PickSummaryLine>)
 interface WmsApi {
     @POST("api/auth/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
@@ -96,6 +137,8 @@ interface WmsApi {
 
     @GET("api/sales-orders/lookup")
     suspend fun lookupSalesOrder(@Query("soNumber") soNumber: String): Response<SoLookupResponse>
+    @GET("api/sales-orders")
+    suspend fun getAllSalesOrders(): Response<List<SalesOrder>>
 
     @GET("api/pallets/lookup-at-location")
     suspend fun lookupPalletAtLocation(
@@ -110,4 +153,31 @@ interface WmsApi {
 
     @GET("api/sales-orders/my-sessions")
     suspend fun getMySessions(): Response<List<SessionSummary>>
+
+
+
+    // ...inside the WmsApi interface:
+    @GET("api/location-stock/lookup")
+    suspend fun lookupLocationStock(@Query("locationCode") locationCode: String): Response<LocationStockLookupResponse>
+
+    @PATCH("api/location-stock/pick")
+    suspend fun pickFromLocation(@Body request: PickRequest): Response<PickResponse>
+
+    // ...inside the WmsApi interface:
+    @GET("api/location-stock/lookup-by-label")
+    suspend fun lookupStockByLabel(@Query("label") label: String): Response<LabelStockLookupResponse>
+
+    @PATCH("api/location-stock/ship")
+    suspend fun shipV2(@Body request: ShipV2Request): Response<ShipV2Response>
+    @GET("api/items/lookup-by-barcode")
+    suspend fun lookupItemByBarcode(@Query("barcode") barcode: String): Response<BarcodeItemLookupResponse>
+    @GET("api/location-stock/lookup-by-label")
+    suspend fun lookupStockByLabel(
+        @Query("label") label: String,
+        @Query("soNumber") soNumber: String
+    ): Response<LabelStockLookupResponse>
+    @GET("api/sales-orders/pick-summary")
+    suspend fun getPickSummary(@Query("soNumber") soNumber: String): Response<PickSummaryResponse>
+    @GET("api/sales-orders/open-list")
+    suspend fun getOpenSalesOrders(): Response<List<OpenSalesOrder>>
 }
