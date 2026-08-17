@@ -29,7 +29,7 @@ fun OutboundMenuScreen(navController: NavHostController) {
 //        Spacer(modifier = Modifier.height(12.dp))
 //        MenuButton("SHIP (Outbound WH \u2192 Gone)") { navController.navigate("ship") }
         Spacer(modifier = Modifier.height(12.dp))
-        MenuButton("SHIP (SESSION)") { navController.navigate("shipping_sessions") }
+        MenuButton("CEK OUTBOUND WH") { navController.navigate("outbound_wh_contents") }
         Spacer(modifier = Modifier.height(12.dp))
         MenuButton("CHECK SO") { navController.navigate("check_so") }
         Spacer(modifier = Modifier.height(24.dp))

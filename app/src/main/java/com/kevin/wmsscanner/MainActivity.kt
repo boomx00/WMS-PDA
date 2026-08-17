@@ -88,5 +88,9 @@ fun WmsApp() {
             val soNumber = backStackEntry.arguments?.getString("soNumber") ?: ""
             ShipSessionScreen(navController, soNumber)
         }
-    }
+
+        composable("move_v2") { MoveV2Screen(navController) }
+
+        composable("move_in_v2") { MoveInV2Screen(navController) }
+        composable("outbound_wh_contents") { OutboundWhContentsScreen(navController) }    }
 }

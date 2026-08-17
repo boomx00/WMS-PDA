@@ -25,20 +25,28 @@ import kotlinx.coroutines.launch
 @Composable
 fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
     var labelInput by remember { mutableStateOf("") }
-    var quantityInput by remember { mutableStateOf("") }
+
     var lookupSku by remember { mutableStateOf<String?>(null) }
     var lookupName by remember { mutableStateOf<String?>(null) }
     var lookupQty by remember { mutableStateOf<Int?>(null) }
+    var lookupPalletCartonQty by remember { mutableStateOf<Int?>(null) }
+    var lookupOrderedQty by remember { mutableStateOf<Int?>(null) }
+    var lookupAlreadyShipped by remember { mutableStateOf<Int?>(null) }
+    var lookupRemaining by remember { mutableStateOf<Int?>(null) }
     var lookupLoading by remember { mutableStateOf(false) }
     var lookupError by remember { mutableStateOf<String?>(null) }
+
+    var palletQtyInput by remember { mutableStateOf("") }
+    var cartonQtyInput by remember { mutableStateOf("") }
+
     var error by remember { mutableStateOf<String?>(null) }
     var success by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
     val labelFocusRequester = remember { FocusRequester() }
-    val quantityFocusRequester = remember { FocusRequester() }
-    var lookupAlreadyShipped by remember { mutableStateOf<Int?>(null) }
+    val palletFocusRequester = remember { FocusRequester() }
+
     LaunchedEffect(Unit) {
         labelFocusRequester.requestFocus()
     }
@@ -46,7 +54,7 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
     LaunchedEffect(Unit) {
         ScanBus.scans.collect { code ->
             labelInput = code
-            quantityFocusRequester.requestFocus()
+            palletFocusRequester.requestFocus()
             keyboardController?.show()
         }
     }
@@ -55,10 +63,15 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
         lookupSku = null
         lookupName = null
         lookupQty = null
+        lookupPalletCartonQty = null
+        lookupOrderedQty = null
         lookupAlreadyShipped = null
+        lookupRemaining = null
         lookupError = null
         error = null
         success = null
+        palletQtyInput = ""
+        cartonQtyInput = ""
 
         if (labelInput.isBlank()) return@LaunchedEffect
 
@@ -72,7 +85,10 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
                 lookupSku = body?.itemSku
                 lookupName = body?.itemName
                 lookupQty = body?.quantity
+                lookupPalletCartonQty = body?.palletCartonQty
+                lookupOrderedQty = body?.orderedQty
                 lookupAlreadyShipped = body?.alreadyShipped
+                lookupRemaining = body?.remaining
             } else {
                 lookupError = "Barang tidak ditemukan"
             }
@@ -80,6 +96,30 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
             lookupLoading = false
             lookupError = "Couldn't reach server: ${e.message}"
         }
+    }
+
+    val palletCartonQty = lookupPalletCartonQty ?: 0
+    val palletFilled = palletQtyInput.isNotBlank()
+    val cartonFilled = cartonQtyInput.isNotBlank()
+
+    val palletValue = palletQtyInput.toIntOrNull()
+    val cartonValue = cartonQtyInput.toIntOrNull()
+
+    // One ship action can only ever represent AT MOST one physical pallet.
+    val quantityError: String? = when {
+        palletFilled && cartonFilled -> "Isi salah satu saja, jangan keduanya"
+        palletFilled && palletValue != null && palletValue > 1 ->
+            "Maksimal 1 pallet per pengiriman"
+        cartonFilled && cartonValue != null && palletCartonQty > 0 && cartonValue > palletCartonQty ->
+            "Maksimal $palletCartonQty carton (1 pallet penuh)"
+        else -> null
+    }
+
+    val resolvedQty: Int? = when {
+        quantityError != null -> null
+        palletFilled && !cartonFilled && palletValue != null -> palletValue * palletCartonQty
+        cartonFilled && !palletFilled && cartonValue != null -> cartonValue
+        else -> null
     }
 
     Column(
@@ -106,7 +146,7 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
                 .focusRequester(labelFocusRequester),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             keyboardActions = KeyboardActions(onNext = {
-                quantityFocusRequester.requestFocus()
+                palletFocusRequester.requestFocus()
                 keyboardController?.show()
             })
         )
@@ -123,28 +163,65 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
         } else if (lookupSku != null) {
             Text("$lookupSku — $lookupName", style = MaterialTheme.typography.bodyMedium)
             Text(
-                "Qty tersedia di Outbound WH: $lookupQty",
+                "Qty tersedia di Outbound WH: $lookupQty (${lookupPalletCartonQty ?: "?"} carton/pallet)",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary
             )
+            if (lookupOrderedQty != null) {
+                Text(
+                    "Pesanan: $lookupOrderedQty · Sudah terkirim: ${lookupAlreadyShipped ?: 0} · Sisa: $lookupRemaining",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        if (lookupSku != null) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Pilih salah satu kuantitas (maks 1 pallet)", style = MaterialTheme.typography.labelMedium)
+            Spacer(modifier = Modifier.height(4.dp))
 
-        OutlinedTextField(
-            value = quantityInput,
-            onValueChange = { quantityInput = it.filter { c -> c.isDigit() } },
-            label = { Text("Quantity per picking list") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(quantityFocusRequester)
-        )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = palletQtyInput,
+                    onValueChange = { palletQtyInput = it.filter { c -> c.isDigit() } },
+                    label = { Text("Pallet") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(palletFocusRequester)
+                )
+                OutlinedTextField(
+                    value = cartonQtyInput,
+                    onValueChange = { cartonQtyInput = it.filter { c -> c.isDigit() } },
+                    label = { Text("Carton Qty") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            if (quantityError != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(quantityError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            } else if (resolvedQty != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "= $resolvedQty units",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
 
         lookupAlreadyShipped?.let { shipped ->
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
-                "Sudah di masukan sebanyak: $shipped karton",
+                "Already shipped for this SO: $shipped",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -163,7 +240,7 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
 
         Button(
             onClick = {
-                val qty = quantityInput.toIntOrNull() ?: return@Button
+                val qty = resolvedQty ?: return@Button
                 error = null
                 success = null
                 loading = true
@@ -176,7 +253,8 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
                         if (response.isSuccessful) {
                             success = "Shipped $qty units"
                             labelInput = ""
-                            quantityInput = ""
+                            palletQtyInput = ""
+                            cartonQtyInput = ""
                             labelFocusRequester.requestFocus()
                         } else {
                             error = "Failed: ${response.errorBody()?.string() ?: "unknown error"}"
@@ -187,7 +265,7 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
                     }
                 }
             },
-            enabled = !loading && labelInput.isNotBlank() && quantityInput.toIntOrNull() != null,
+            enabled = !loading && labelInput.isNotBlank() && resolvedQty != null && quantityError == null,
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
             modifier = Modifier.fillMaxWidth().height(56.dp)
         ) {

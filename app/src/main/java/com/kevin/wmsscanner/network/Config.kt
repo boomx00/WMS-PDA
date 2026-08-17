@@ -5,3 +5,5 @@ object Config {
     const val BASE_URL = "https://boomwms.tech/"}
 
 //server ip 187.124.138.189
+//"https://boomwms.tech/"
+//http://172.20.10.3:3000/ hotspot

@@ -113,82 +113,84 @@ fun PickPopup(
     onSuccess: () -> Unit
 ) {
     var locationInput by remember { mutableStateOf("") }
-    var locationLooked by remember { mutableStateOf(false) }
-    var foundAtLocation by remember { mutableStateOf(false) }
+    var locationChecked by remember { mutableStateOf(false) }
+    var loadingLookup by remember { mutableStateOf(false) }
 
-    // Identification step — only needed if the scanned location comes back
-    // untracked for this SKU.
-    var identifyInput by remember { mutableStateOf("") }
-    var identifyError by remember { mutableStateOf<String?>(null) }
-    var identifyConfirmed by remember { mutableStateOf(false) }
+    var locationStatus by remember { mutableStateOf<String?>(null) }
+    var matchedQty by remember { mutableStateOf(0) }
 
     var palletCountInput by remember { mutableStateOf("") }
+    var cartonQtyInput by remember { mutableStateOf("") }
+
     var submitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        ScanBus.scans.collect { code ->
-            if (!locationLooked) {
-                locationInput = code
-            } else if (!identifyConfirmed) {
-                identifyInput = code
-            }
-        }
+        ScanBus.scans.collect { code -> locationInput = code }
     }
 
     LaunchedEffect(locationInput) {
-        locationLooked = false
-        foundAtLocation = false
-        identifyConfirmed = false
-        identifyInput = ""
-        identifyError = null
+        locationChecked = false
+        locationStatus = null
+        matchedQty = 0
         error = null
 
         if (locationInput.isBlank()) return@LaunchedEffect
         delay(400)
 
+        loadingLookup = true
         try {
             val response = NetworkModule.api.lookupLocationStock(locationInput.trim())
-            locationLooked = true
+            loadingLookup = false
+            locationChecked = true
             if (response.isSuccessful) {
-                val stock = response.body()?.stock ?: emptyList()
-                foundAtLocation = stock.any { it.itemSku == line.itemSku }
+                val body = response.body()
+                val stock = body?.stock ?: emptyList()
+                val locationType = body?.locationType
+                val match = stock.find { it.itemSku == line.itemSku }
+                val occupiedByOther = stock.any { it.itemSku != line.itemSku }
+
+                // Only RACK cells are single-SKU — occupied-by-other only
+                // counts as a genuine mismatch there. Floor and other
+                // multi-SKU locations just fall through to EMPTY (Default
+                // Picking territory) when the target SKU isn't among what's
+                // already there.
+                locationStatus = when {
+                    match != null -> "MATCH"
+                    occupiedByOther && locationType == "RACK" -> "MISMATCH"
+                    else -> "EMPTY"
+                }
+                matchedQty = match?.quantity ?: 0
+            } else {
+                error = "Location not found"
             }
         } catch (e: Exception) {
+            loadingLookup = false
             error = "Couldn't reach server: ${e.message}"
         }
     }
 
-    LaunchedEffect(identifyInput) {
-        identifyError = null
-        identifyConfirmed = false
-        if (identifyInput.isBlank()) return@LaunchedEffect
-        delay(400)
+    // Resolve the final quantity to submit + validation state, based on
+    // exactly one of the two fields being filled.
+    val palletFilled = palletCountInput.isNotBlank()
+    val cartonFilled = cartonQtyInput.isNotBlank()
 
-        try {
-            val response = NetworkModule.api.lookupItemByBarcode(identifyInput.trim())
-            if (response.isSuccessful && response.body()?.sku == line.itemSku) {
-                identifyConfirmed = true
-            } else if (response.isSuccessful) {
-                identifyError = "This is ${response.body()?.sku}, expected ${line.itemSku}"
-            } else {
-                identifyError = "Barang tidak ditemukan"
-            }
-        } catch (e: Exception) {
-            identifyError = "Couldn't reach server: ${e.message}"
-        }
+    val quantityError: String? = when {
+        palletFilled && cartonFilled -> "Isi salah satu saja, jangan keduanya"
+        !palletFilled && !cartonFilled -> null // no error yet, just not ready — don't show until they try
+        else -> null
     }
 
-    val readyForQuantity = locationLooked && (foundAtLocation || identifyConfirmed)
+    val resolvedQty: Int? = when {
+        palletFilled && !cartonFilled -> palletCountInput.toIntOrNull()?.times(line.palletCartonQty)
+        cartonFilled && !palletFilled -> cartonQtyInput.toIntOrNull()
+        else -> null
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier
-                    .padding(20.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
+            Column(modifier = Modifier.padding(20.dp)) {
                 Text(line.itemSku, style = MaterialTheme.typography.titleMedium)
                 Text(line.itemName, style = MaterialTheme.typography.bodySmall)
                 Text(
@@ -209,48 +211,76 @@ fun PickPopup(
                 Spacer(modifier = Modifier.height(8.dp))
                 CameraScanButton(modifier = Modifier.fillMaxWidth())
 
-                if (locationLooked && !foundAtLocation) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        "Not tracked at this location \u2014 scan barcode or input SKU to confirm",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.tertiary
-                    )
+                if (loadingLookup) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = identifyInput,
-                        onValueChange = { identifyInput = it },
-                        label = { Text("Scan barcode or input SKU") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    CameraScanButton(modifier = Modifier.fillMaxWidth())
+                    Text("Checking...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
 
-                    if (identifyError != null) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(identifyError!!, color = MaterialTheme.colorScheme.error)
+                when (locationStatus) {
+                    "MATCH" -> {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            "Confirmed — $matchedQty available here",
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
-                    if (identifyConfirmed) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Confirmed", color = MaterialTheme.colorScheme.primary)
+                    "MISMATCH" -> {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            "This location has a different product",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    "EMPTY" -> {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            "No stock recorded here — will be logged as Default Picking",
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
                     }
                 }
 
-                if (readyForQuantity) {
+                if (locationStatus == "MATCH" || locationStatus == "EMPTY") {
                     Spacer(modifier = Modifier.height(16.dp))
-                    OutlinedTextField(
-                        value = palletCountInput,
-                        onValueChange = { palletCountInput = it.filter { c -> c.isDigit() } },
-                        label = { Text("Pallet count") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                        modifier = Modifier.fillMaxWidth()
+                    Text("Pilih salah satu kuantitas", style = MaterialTheme.typography.labelMedium)
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = palletCountInput,
+                            onValueChange = { palletCountInput = it.filter { c -> c.isDigit() } },
+                            label = { Text("Pallet") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = cartonQtyInput,
+                            onValueChange = { cartonQtyInput = it.filter { c -> c.isDigit() } },
+                            label = { Text("Carton Qty") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "${line.palletCartonQty} cartons/pallet",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    val count = palletCountInput.toIntOrNull()
-                    if (count != null) {
+
+                    if (quantityError != null) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(quantityError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    } else if (resolvedQty != null) {
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "= ${count * line.palletCartonQty} units",
+                            "= $resolvedQty units",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -269,8 +299,7 @@ fun PickPopup(
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            val count = palletCountInput.toIntOrNull() ?: return@Button
-                            val qty = count * line.palletCartonQty
+                            val qty = resolvedQty ?: return@Button
                             submitting = true
                             error = null
                             scope.launch {
@@ -280,7 +309,6 @@ fun PickPopup(
                                             locationCode = locationInput.trim(),
                                             itemSku = line.itemSku,
                                             quantity = qty,
-                                            sourceUntracked = if (!foundAtLocation) true else null,
                                             soNumber = soNumber
                                         )
                                     )
@@ -296,7 +324,8 @@ fun PickPopup(
                                 }
                             }
                         },
-                        enabled = readyForQuantity && !submitting && palletCountInput.toIntOrNull() != null
+                        enabled = (locationStatus == "MATCH" || locationStatus == "EMPTY") &&
+                                resolvedQty != null && quantityError == null && !submitting
                     ) {
                         Text(if (submitting) "Picking..." else "Confirm")
                     }

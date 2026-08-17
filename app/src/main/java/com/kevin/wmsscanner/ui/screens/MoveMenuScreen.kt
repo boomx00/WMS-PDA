@@ -23,12 +23,11 @@ fun MoveMenuScreen(navController: NavHostController) {
         Text(text = "Move", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(40.dp))
 
-        MenuButton("MOVE IN (Floor \u2192 Rack)") { navController.navigate("move_in") }
+        MenuButton("MOVE FLOOR \u2192 RACK  (v2)") { navController.navigate("move_in_v2") }
         Spacer(modifier = Modifier.height(12.dp))
-        MenuButton("MOVE OUT (Rack \u2192 Floor)") { navController.navigate("move_out") }
-        Spacer(modifier = Modifier.height(12.dp))
-        MenuButton("RACK \u2192 RACK") { navController.navigate("move_rack_to_rack") }
-
+//        MenuButton("MOVE OUT (Rack \u2192 Floor)") { navController.navigate("move_out") }
+//        Spacer(modifier = Modifier.height(12.dp))
+        MenuButton("Perpindahan lokasi (v2)") { navController.navigate("move_v2") }
         Spacer(modifier = Modifier.height(24.dp))
 
         OutlinedButton(

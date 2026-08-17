@@ -6,7 +6,7 @@ import retrofit2.http.POST
 import retrofit2.http.PATCH
 import retrofit2.http.GET
 import retrofit2.http.Query
-
+import retrofit2.http.Path
 data class LoginRequest(val username: String, val password: String)
 data class LoginResponse(val id: Int, val username: String, val roleId: Int)
 data class ConfirmInboundRequest(val label: String, val locationCode: String)
@@ -21,6 +21,15 @@ data class LocationStockItem(
     val palletCartonQty: Int,
     val quantity: Int
 )
+data class OpnameLocationRow(val locationCode: String, val total: Int, val counted: Int, val done: Boolean)
+data class OpnameCountRequest(val locationCode: String, val scanned: String, val countedQty: Int)
+data class OpnameCountResponse(
+    val itemSku: String,
+    val itemName: String,
+    val countedQty: Int,
+    val difference: Int? = null,
+    val locationCode: String? = null
+)
 data class LocationStockLookupResponse(val locationCode: String, val locationType: String, val stock: List<LocationStockItem>)
 data class PickResponse(val locationCode: String, val itemSku: String, val quantityPicked: Int)
 data class ShipV2Request(val soNumber: String, val label: String, val quantity: Int)
@@ -30,6 +39,7 @@ data class LabelStockLookupResponse(
     val itemSku: String,
     val itemName: String,
     val quantity: Int,
+    val palletCartonQty: Int? = null,
     val orderedQty: Int? = null,
     val alreadyShipped: Int? = null,
     val remaining: Int? = null
@@ -108,10 +118,77 @@ data class SalesOrder(
     val soNumber: String,
     val orderDate: String
 )
+
+data class MoveV2Request(
+    val sourceLocationCode: String,
+    val destinationLocationCode: String,
+    val itemSku: String,
+    val quantity: Int,
+    val sourceUntracked: Boolean? = null
+)
 data class OpenSalesOrder(val soNumber: String, val orderDate: String, val status: String)
+data class MoveInV2Request(val label: String, val destinationLocationCode: String, val quantity: Int)
+data class SettingsResponse(
+    val allowDefaultCodeTransactions: Boolean,
+    val automaticInbound: Boolean,
+    val automaticInboundFromRack: Boolean,
+    val allowUntrackedOutbound: Boolean,
+    val allowDefaultPicking: Boolean,
+    val allowNegativeFloorStock: Boolean,
+    val allowNegativeRackStock: Boolean
+)
+data class OpnameSession(
+    val opnameNumber: String,
+    val notes: String?,
+    val status: String,
+    val totalLines: Int,
+    val countedLines: Int
+)
+
+data class OpnameLine(
+    val id: Int,
+    val locationCode: String,
+    val itemSku: String,
+    val itemName: String,
+    val systemQty: Int,
+    val countedQty: Int?,
+    val difference: Int?,
+    val countedAt: String?
+)
+
+data class OpnameDetailResponse(
+    val opnameNumber: String,
+    val notes: String?,
+    val lines: List<OpnameLine>
+)
+
+data class CountRequest(val locationCode: String, val itemSku: String, val countedQty: Int)
 
 data class PickSummaryResponse(val soNumber: String, val items: List<PickSummaryLine>)
+
+data class CreateCustomOpnameRequest(val notes: String? = null)
+data class OpnameReportItem(
+    val itemSku: String,
+    val itemName: String,
+    val countedQty: Int,
+    val countedAt: String?,
+    val countedByUsername: String?
+)
+data class OpnameReportLocation(val locationCode: String, val counted: Boolean, val items: List<OpnameReportItem>)
+data class OpnameReportResponse(
+    val opnameNumber: String,
+    val notes: String?,
+    val assignedToUsername: String?,
+    val totalLocations: Int,
+    val countedLocations: Int,
+    val report: List<OpnameReportLocation>
+)
+
 interface WmsApi {
+    @GET("api/stock-opname/{opnameNumber}/report")
+    suspend fun getOpnameReport(@Path("opnameNumber") opnameNumber: String): Response<OpnameReportResponse>
+    @PATCH("api/stock-opname/{opnameNumber}/finish")
+    suspend fun finishOpname(@Path("opnameNumber") opnameNumber: String): Response<Unit>
     @POST("api/auth/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
 
@@ -180,4 +257,28 @@ interface WmsApi {
     suspend fun getPickSummary(@Query("soNumber") soNumber: String): Response<PickSummaryResponse>
     @GET("api/sales-orders/open-list")
     suspend fun getOpenSalesOrders(): Response<List<OpenSalesOrder>>
+
+    @PATCH("api/location-stock/move")
+    suspend fun moveV2(@Body request: MoveV2Request): Response<Unit>
+
+
+    @PATCH("api/location-stock/move-in")
+    suspend fun moveInV2(@Body request: MoveInV2Request): Response<Unit>
+
+    @GET("api/settings")
+    suspend fun getSettings(): Response<SettingsResponse>
+
+    @GET("api/stock-opname/my-sessions")
+    suspend fun getMyOpnameSessions(): Response<List<OpnameSession>>
+
+    @GET("api/stock-opname/{opnameNumber}/locations")
+    suspend fun getOpnameLocations(@Path("opnameNumber") opnameNumber: String): Response<List<OpnameLocationRow>>
+
+    @PATCH("api/stock-opname/{opnameNumber}/count")
+    suspend fun submitOpnameCount(
+        @Path("opnameNumber") opnameNumber: String,
+        @Body request: OpnameCountRequest
+    ): Response<OpnameCountResponse>
+    @POST("api/stock-opname/custom")
+    suspend fun createCustomOpname(@Body request: CreateCustomOpnameRequest): Response<OpnameSession>
 }

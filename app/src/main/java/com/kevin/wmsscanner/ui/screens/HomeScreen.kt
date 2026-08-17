@@ -44,7 +44,7 @@ fun HomeScreen(navController: NavHostController) {
         Spacer(modifier = Modifier.height(12.dp))
         MenuButton("MOVE") { navController.navigate("move_menu") }
         Spacer(modifier = Modifier.height(12.dp))
-        MenuButton("CONFIRM INBOUND") { navController.navigate("confirm_inbound") }
+//        MenuButton("CONFIRM INBOUND") { navController.navigate("confirm_inbound") }
         Spacer(modifier = Modifier.height(12.dp))
         MenuButton("Stock Opname") {navController.navigate("stock_opname") }
 
