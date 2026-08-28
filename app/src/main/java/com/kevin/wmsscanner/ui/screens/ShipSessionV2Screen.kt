@@ -16,79 +16,70 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.kevin.wmsscanner.ScanBus
+import com.kevin.wmsscanner.network.ClaimRequest
 import com.kevin.wmsscanner.network.NetworkModule
 import com.kevin.wmsscanner.network.ShipV2Request
 import com.kevin.wmsscanner.ui.components.CameraScanButton
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
+import androidx.compose.ui.window.Dialog
 @Composable
-fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
+fun ShipSessionV2Screen(navController: NavHostController, soNumber: String, expectedSku: String) {
     var labelInput by remember { mutableStateOf("") }
+    var quantityInput by remember { mutableStateOf("") }
 
     var lookupSku by remember { mutableStateOf<String?>(null) }
     var lookupName by remember { mutableStateOf<String?>(null) }
-    var lookupQty by remember { mutableStateOf<Int?>(null) }
-    var lookupPalletCartonQty by remember { mutableStateOf<Int?>(null) }
+    var lookupUnclaimed by remember { mutableStateOf<Int?>(null) }
     var lookupOrderedQty by remember { mutableStateOf<Int?>(null) }
     var lookupAlreadyShipped by remember { mutableStateOf<Int?>(null) }
     var lookupRemaining by remember { mutableStateOf<Int?>(null) }
+    var lookupAvailableToShip by remember { mutableStateOf<Int?>(null) }
     var lookupLoading by remember { mutableStateOf(false) }
     var lookupError by remember { mutableStateOf<String?>(null) }
-
-    var palletQtyInput by remember { mutableStateOf("") }
-    var cartonQtyInput by remember { mutableStateOf("") }
-
+    var skuMismatch by remember { mutableStateOf(false) }
+    var claimAmountInput by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var success by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
+    var claiming by remember { mutableStateOf(false) }
+    var claimError by remember { mutableStateOf<String?>(null) }
+    var showClaimDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
     val labelFocusRequester = remember { FocusRequester() }
-    val palletFocusRequester = remember { FocusRequester() }
+    val quantityFocusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(Unit) {
-        labelFocusRequester.requestFocus()
-    }
-
-    LaunchedEffect(Unit) {
-        ScanBus.scans.collect { code ->
-            labelInput = code
-            palletFocusRequester.requestFocus()
-            keyboardController?.show()
-        }
-    }
-
-    LaunchedEffect(labelInput) {
+    suspend fun runLookup(value: String) {
         lookupSku = null
         lookupName = null
-        lookupQty = null
-        lookupPalletCartonQty = null
+        lookupUnclaimed = null
         lookupOrderedQty = null
         lookupAlreadyShipped = null
         lookupRemaining = null
+        lookupAvailableToShip = null
         lookupError = null
-        error = null
-        success = null
-        palletQtyInput = ""
-        cartonQtyInput = ""
+        skuMismatch = false
+        claimAmountInput = ""
+        if (value.isBlank()) return
 
-        if (labelInput.isBlank()) return@LaunchedEffect
-
-        delay(400)
         lookupLoading = true
         try {
-            val response = NetworkModule.api.lookupStockByLabel(labelInput.trim(), soNumber)
+            val response = NetworkModule.api.lookupStockByLabel(value.trim(), soNumber)
             lookupLoading = false
             if (response.isSuccessful) {
                 val body = response.body()
                 lookupSku = body?.itemSku
                 lookupName = body?.itemName
-                lookupQty = body?.quantity
-                lookupPalletCartonQty = body?.palletCartonQty
+                lookupUnclaimed = body?.quantity
                 lookupOrderedQty = body?.orderedQty
                 lookupAlreadyShipped = body?.alreadyShipped
                 lookupRemaining = body?.remaining
+                lookupAvailableToShip = body?.availableToShip
+
+                if (lookupSku != null && lookupSku != expectedSku) {
+                    skuMismatch = true
+                }
             } else {
                 lookupError = "Barang tidak ditemukan"
             }
@@ -98,28 +89,23 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
         }
     }
 
-    val palletCartonQty = lookupPalletCartonQty ?: 0
-    val palletFilled = palletQtyInput.isNotBlank()
-    val cartonFilled = cartonQtyInput.isNotBlank()
-
-    val palletValue = palletQtyInput.toIntOrNull()
-    val cartonValue = cartonQtyInput.toIntOrNull()
-
-    // One ship action can only ever represent AT MOST one physical pallet.
-    val quantityError: String? = when {
-        palletFilled && cartonFilled -> "Isi salah satu saja, jangan keduanya"
-        palletFilled && palletValue != null && palletValue > 1 ->
-            "Maksimal 1 pallet per pengiriman"
-        cartonFilled && cartonValue != null && palletCartonQty > 0 && cartonValue > palletCartonQty ->
-            "Maksimal $palletCartonQty carton (1 pallet penuh)"
-        else -> null
+    LaunchedEffect(Unit) {
+        labelFocusRequester.requestFocus()
     }
 
-    val resolvedQty: Int? = when {
-        quantityError != null -> null
-        palletFilled && !cartonFilled && palletValue != null -> palletValue * palletCartonQty
-        cartonFilled && !palletFilled && cartonValue != null -> cartonValue
-        else -> null
+    LaunchedEffect(Unit) {
+        ScanBus.scans.collect { code ->
+            labelInput = code
+            quantityFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
+
+    LaunchedEffect(labelInput) {
+        error = null
+        success = null
+        delay(400)
+        runLookup(labelInput)
     }
 
     Column(
@@ -134,6 +120,11 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        Text(
+            "Expected: $expectedSku",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
         Spacer(modifier = Modifier.height(24.dp))
 
         OutlinedTextField(
@@ -146,7 +137,7 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
                 .focusRequester(labelFocusRequester),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
             keyboardActions = KeyboardActions(onNext = {
-                palletFocusRequester.requestFocus()
+                quantityFocusRequester.requestFocus()
                 keyboardController?.show()
             })
         )
@@ -160,72 +151,56 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
             Text("Checking...", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else if (lookupError != null) {
             Text(lookupError!!, color = MaterialTheme.colorScheme.error)
+        } else if (skuMismatch) {
+            Text(
+                "SKU tidak sesuai — diharapkan $expectedSku, discan $lookupSku",
+                color = MaterialTheme.colorScheme.error
+            )
         } else if (lookupSku != null) {
             Text("$lookupSku — $lookupName", style = MaterialTheme.typography.bodyMedium)
-            Text(
-                "Qty tersedia di Outbound WH: $lookupQty (${lookupPalletCartonQty ?: "?"} carton/pallet)",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
+
+            lookupAvailableToShip?.let { available ->
+                Text(
+                    "Tersedia untuk SO ini: $available",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            if ((lookupUnclaimed ?: 0) > 0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Ecer (belum diklaim) di Outbound WH: $lookupUnclaimed",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                TextButton(onClick = { showClaimDialog = true }) {
+                    Text("Klaim Ecer")
+                }
+            }
+
             if (lookupOrderedQty != null) {
                 Text(
-                    "Pesanan: $lookupOrderedQty · Sudah terkirim: ${lookupAlreadyShipped ?: 0} · Sisa: $lookupRemaining",
+                    "Ordered: $lookupOrderedQty · Already shipped: ${lookupAlreadyShipped ?: 0} · Remaining: $lookupRemaining",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.tertiary
                 )
             }
         }
 
-        if (lookupSku != null) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("Pilih salah satu kuantitas (maks 1 pallet)", style = MaterialTheme.typography.labelMedium)
-            Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = palletQtyInput,
-                    onValueChange = { palletQtyInput = it.filter { c -> c.isDigit() } },
-                    label = { Text("Pallet") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
-                    modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(palletFocusRequester)
-                )
-                OutlinedTextField(
-                    value = cartonQtyInput,
-                    onValueChange = { cartonQtyInput = it.filter { c -> c.isDigit() } },
-                    label = { Text("Carton Qty") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            if (quantityError != null) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(quantityError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            } else if (resolvedQty != null) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "= $resolvedQty units",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        lookupAlreadyShipped?.let { shipped ->
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "Already shipped for this SO: $shipped",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        OutlinedTextField(
+            value = quantityInput,
+            onValueChange = { quantityInput = it.filter { c -> c.isDigit() } },
+            label = { Text("Quantity per picking list") },
+            singleLine = true,
+            enabled = !skuMismatch,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(quantityFocusRequester)
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -240,7 +215,7 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
 
         Button(
             onClick = {
-                val qty = resolvedQty ?: return@Button
+                val qty = quantityInput.toIntOrNull() ?: return@Button
                 error = null
                 success = null
                 loading = true
@@ -253,8 +228,7 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
                         if (response.isSuccessful) {
                             success = "Shipped $qty units"
                             labelInput = ""
-                            palletQtyInput = ""
-                            cartonQtyInput = ""
+                            quantityInput = ""
                             labelFocusRequester.requestFocus()
                         } else {
                             error = "Failed: ${response.errorBody()?.string() ?: "unknown error"}"
@@ -265,7 +239,7 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
                     }
                 }
             },
-            enabled = !loading && labelInput.isNotBlank() && resolvedQty != null && quantityError == null,
+            enabled = !loading && !skuMismatch && labelInput.isNotBlank() && quantityInput.toIntOrNull() != null,
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
             modifier = Modifier.fillMaxWidth().height(56.dp)
         ) {
@@ -279,6 +253,111 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Back to Shipping")
+        }
+    }
+    if (showClaimDialog) {
+        ClaimEcerDialog(
+            soNumber = soNumber,
+            itemSku = lookupSku ?: "",
+            maxAmount = lookupUnclaimed ?: 0,
+            onDismiss = { showClaimDialog = false },
+            onConfirmed = {
+                showClaimDialog = false
+                scope.launch {
+                    runLookup(labelInput)
+                    quantityFocusRequester.requestFocus()
+                    keyboardController?.show()
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun ClaimEcerDialog(
+    soNumber: String,
+    itemSku: String,
+    maxAmount: Int,
+    onDismiss: () -> Unit,
+    onConfirmed: () -> Unit
+) {
+    var amountInput by remember { mutableStateOf("") }
+    var submitting by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    val amount = amountInput.toIntOrNull()
+    val exceedsMax = amount != null && amount > maxAmount
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("Klaim Ecer", style = MaterialTheme.typography.titleMedium)
+                Text(itemSku, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Maksimal: $maxAmount",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                OutlinedTextField(
+                    value = amountInput,
+                    onValueChange = { amountInput = it.filter { c -> c.isDigit() } },
+                    label = { Text("Jumlah") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (exceedsMax) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Tidak boleh lebih dari $maxAmount",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                if (error != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(error!!, color = MaterialTheme.colorScheme.error)
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Batal") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val amt = amount ?: return@Button
+                            submitting = true
+                            error = null
+                            scope.launch {
+                                try {
+                                    val response = NetworkModule.api.claimStock(
+                                        soNumber,
+                                        ClaimRequest(itemSku, amt)
+                                    )
+                                    submitting = false
+                                    if (response.isSuccessful) {
+                                        onConfirmed()
+                                    } else {
+                                        error = "Failed: ${response.errorBody()?.string() ?: "unknown error"}"
+                                    }
+                                } catch (e: Exception) {
+                                    submitting = false
+                                    error = "Couldn't reach server: ${e.message}"
+                                }
+                            }
+                        },
+                        enabled = !submitting && amount != null && amount > 0 && !exceedsMax
+                    ) {
+                        Text(if (submitting) "Claiming..." else "Konfirmasi")
+                    }
+                }
+            }
         }
     }
 }

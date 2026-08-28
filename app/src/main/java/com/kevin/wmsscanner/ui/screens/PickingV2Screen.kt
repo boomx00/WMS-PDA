@@ -27,14 +27,15 @@ fun PickingV2Screen(navController: NavHostController) {
     var locationInput by remember { mutableStateOf("") }
     var stockList by remember { mutableStateOf<List<LocationStockItem>>(emptyList()) }
     var selectedTrackedItem by remember { mutableStateOf<LocationStockItem?>(null) }
-    var locationLooked by remember { mutableStateOf(false) } // has a lookup for this location completed?
+    var locationLooked by remember { mutableStateOf(false) }
 
-    // "Default picking" path — location came back empty, identify via carton barcode.
     var barcodeInput by remember { mutableStateOf("") }
     var barcodeItem by remember { mutableStateOf<BarcodeItemLookupResponse?>(null) }
     var barcodeError by remember { mutableStateOf<String?>(null) }
 
     var palletCountInput by remember { mutableStateOf("") }
+    var cartonQtyInput by remember { mutableStateOf("") }
+
     var loadingLookup by remember { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -42,7 +43,6 @@ fun PickingV2Screen(navController: NavHostController) {
     val scope = rememberCoroutineScope()
     val locationFocusRequester = remember { FocusRequester() }
     val barcodeFocusRequester = remember { FocusRequester() }
-    val palletFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
         locationFocusRequester.requestFocus()
@@ -50,9 +50,6 @@ fun PickingV2Screen(navController: NavHostController) {
 
     LaunchedEffect(Unit) {
         ScanBus.scans.collect { code ->
-            // Whichever field is currently "active" for scanning gets it —
-            // if we're still on the location step, fill that; if we've
-            // moved into the barcode-identification step, fill that instead.
             if (!locationLooked) {
                 locationInput = code
             } else if (stockList.isEmpty() && barcodeItem == null) {
@@ -69,6 +66,7 @@ fun PickingV2Screen(navController: NavHostController) {
         barcodeItem = null
         barcodeError = null
         palletCountInput = ""
+        cartonQtyInput = ""
         error = null
         success = null
 
@@ -107,7 +105,6 @@ fun PickingV2Screen(navController: NavHostController) {
             val response = NetworkModule.api.lookupItemByBarcode(barcodeInput.trim())
             if (response.isSuccessful) {
                 barcodeItem = response.body()
-                palletFocusRequester.requestFocus()
             } else {
                 barcodeError = "Barang tidak ditemukan"
             }
@@ -125,6 +122,19 @@ fun PickingV2Screen(navController: NavHostController) {
         barcodeItem = null
         barcodeError = null
         palletCountInput = ""
+        cartonQtyInput = ""
+    }
+
+    val activePalletCartonQty = selectedTrackedItem?.palletCartonQty ?: barcodeItem?.palletCartonQty
+
+    val palletValue = palletCountInput.toIntOrNull()
+    val cartonValue = cartonQtyInput.toIntOrNull()
+
+    val resolvedQty: Int? = when {
+        palletCountInput.isNotBlank() && palletValue != null && activePalletCartonQty != null ->
+            palletValue * activePalletCartonQty
+        cartonQtyInput.isNotBlank() && cartonValue != null -> cartonValue
+        else -> null
     }
 
     Column(
@@ -135,7 +145,7 @@ fun PickingV2Screen(navController: NavHostController) {
     ) {
         Text("Picking (v2)", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Scan location \u2014 pallet count, not carton qty",
+            "Scan or type location",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -161,7 +171,6 @@ fun PickingV2Screen(navController: NavHostController) {
             Text("Checking...", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
-        // Case: multiple SKUs at this location (e.g. Floor) — pick one.
         if (locationLooked && stockList.size > 1) {
             Text("Multiple products here \u2014 pick one:", style = MaterialTheme.typography.titleSmall)
             Spacer(modifier = Modifier.height(8.dp))
@@ -181,7 +190,6 @@ fun PickingV2Screen(navController: NavHostController) {
             }
         }
 
-        // Case: location already has a tracked product — just confirm + enter pallets.
         selectedTrackedItem?.let { item ->
             Spacer(modifier = Modifier.height(16.dp))
             Text(item.itemSku, style = MaterialTheme.typography.titleMedium)
@@ -193,11 +201,10 @@ fun PickingV2Screen(navController: NavHostController) {
             )
         }
 
-        // Case: location is empty per the system — identify via carton barcode.
         if (locationLooked && stockList.isEmpty() && !loadingLookup) {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                "No stock recorded here yet \u2014 scan barcode or input SKU to identify it",
+                "No stock recorded here yet \u2014 scan the carton barcode to identify it",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.tertiary
             )
@@ -234,25 +241,53 @@ fun PickingV2Screen(navController: NavHostController) {
             }
         }
 
-        // Pallet count input — shown once we know the product, either way.
-        val activePalletCartonQty = selectedTrackedItem?.palletCartonQty ?: barcodeItem?.palletCartonQty
         if (activePalletCartonQty != null) {
             Spacer(modifier = Modifier.height(16.dp))
-            OutlinedTextField(
-                value = palletCountInput,
-                onValueChange = { palletCountInput = it.filter { c -> c.isDigit() } },
-                label = { Text("Pallet count") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(palletFocusRequester)
+            Text("Pallet atau Carton Qty", style = MaterialTheme.typography.labelMedium)
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = palletCountInput,
+                    onValueChange = { newValue ->
+                        palletCountInput = newValue.filter { c -> c.isDigit() }
+                        if (palletCountInput.isNotEmpty()) {
+                            cartonQtyInput = ""
+                        }
+                    },
+                    label = { Text("Pallet") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = cartonQtyInput,
+                    onValueChange = { newValue ->
+                        cartonQtyInput = newValue.filter { c -> c.isDigit() }
+                        if (cartonQtyInput.isNotEmpty()) {
+                            palletCountInput = ""
+                        }
+                    },
+                    label = { Text("Carton Qty") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "$activePalletCartonQty cartons/pallet",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            val palletCount = palletCountInput.toIntOrNull()
-            if (palletCount != null) {
+            resolvedQty?.let { qty ->
                 Text(
-                    "= ${palletCount * activePalletCartonQty} units",
+                    "= $qty units",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -262,8 +297,7 @@ fun PickingV2Screen(navController: NavHostController) {
 
             Button(
                 onClick = {
-                    val count = palletCountInput.toIntOrNull() ?: return@Button
-                    val qty = count * activePalletCartonQty
+                    val qty = resolvedQty ?: return@Button
                     val sku = selectedTrackedItem?.itemSku ?: barcodeItem?.sku ?: return@Button
                     val isDefaultPick = selectedTrackedItem == null
 
@@ -282,11 +316,7 @@ fun PickingV2Screen(navController: NavHostController) {
                             )
                             submitting = false
                             if (response.isSuccessful) {
-                                success = if (isDefaultPick) {
-                                    "Default Picking: $count pallet(s) ($qty units) of $sku"
-                                } else {
-                                    "Picked $count pallet(s) ($qty units) of $sku"
-                                }
+                                success = "Picked $qty units of $sku"
                                 resetForm()
                                 locationFocusRequester.requestFocus()
                             } else {
@@ -299,8 +329,8 @@ fun PickingV2Screen(navController: NavHostController) {
                     }
                 },
                 enabled = !submitting &&
-                        palletCountInput.toIntOrNull() != null &&
-                        (selectedTrackedItem == null || (palletCountInput.toInt() * activePalletCartonQty) <= (selectedTrackedItem?.quantity ?: Int.MAX_VALUE)),
+                        resolvedQty != null &&
+                        (selectedTrackedItem == null || resolvedQty!! <= (selectedTrackedItem?.quantity ?: Int.MAX_VALUE)),
                 modifier = Modifier.fillMaxWidth().height(56.dp)
             ) {
                 Text(if (submitting) "Picking..." else "Confirm Pick")

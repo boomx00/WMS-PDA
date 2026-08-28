@@ -5,5 +5,5 @@ import androidx.navigation.NavHostController
 
 @Composable
 fun ShippingSessionsV2Screen(navController: NavHostController) {
-    OpenSoListScreen(navController, "Shipping (v2)", "ship_session_v2")
+    OpenSoListScreen(navController, "Shipping (v2)", "ship_so_items")
 }

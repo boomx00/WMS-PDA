@@ -35,6 +35,8 @@ fun MoveV2Screen(navController: NavHostController) {
 
     var destinationInput by remember { mutableStateOf("") }
     var palletCountInput by remember { mutableStateOf("") }
+    var cartonQtyInput by remember { mutableStateOf("") }
+
     var loadingLookup by remember { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -43,7 +45,6 @@ fun MoveV2Screen(navController: NavHostController) {
     val sourceFocusRequester = remember { FocusRequester() }
     val barcodeFocusRequester = remember { FocusRequester() }
     val destinationFocusRequester = remember { FocusRequester() }
-    val palletFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
         sourceFocusRequester.requestFocus()
@@ -70,6 +71,7 @@ fun MoveV2Screen(navController: NavHostController) {
         barcodeError = null
         destinationInput = ""
         palletCountInput = ""
+        cartonQtyInput = ""
         error = null
         success = null
 
@@ -125,6 +127,20 @@ fun MoveV2Screen(navController: NavHostController) {
         barcodeError = null
         destinationInput = ""
         palletCountInput = ""
+        cartonQtyInput = ""
+    }
+
+    val activeItemSku = selectedTrackedItem?.itemSku ?: barcodeItem?.sku
+    val activePalletCartonQty = selectedTrackedItem?.palletCartonQty ?: barcodeItem?.palletCartonQty
+
+    val palletValue = palletCountInput.toIntOrNull()
+    val cartonValue = cartonQtyInput.toIntOrNull()
+
+    val resolvedQty: Int? = when {
+        palletCountInput.isNotBlank() && palletValue != null && activePalletCartonQty != null ->
+            palletValue * activePalletCartonQty
+        cartonQtyInput.isNotBlank() && cartonValue != null -> cartonValue
+        else -> null
     }
 
     Column(
@@ -135,7 +151,7 @@ fun MoveV2Screen(navController: NavHostController) {
     ) {
         Text("Move (v2)", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Rack \u2192 Rack \u2014 by SKU and pallet count",
+            "Rack \u2192 Rack \u2014 by SKU, pallet, or carton qty",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -231,9 +247,6 @@ fun MoveV2Screen(navController: NavHostController) {
             }
         }
 
-        val activeItemSku = selectedTrackedItem?.itemSku ?: barcodeItem?.sku
-        val activePalletCartonQty = selectedTrackedItem?.palletCartonQty ?: barcodeItem?.palletCartonQty
-
         if (activeItemSku != null) {
             Spacer(modifier = Modifier.height(16.dp))
             OutlinedTextField(
@@ -253,21 +266,51 @@ fun MoveV2Screen(navController: NavHostController) {
 
         if (activeItemSku != null && activePalletCartonQty != null && destinationInput.isNotBlank()) {
             Spacer(modifier = Modifier.height(16.dp))
-            OutlinedTextField(
-                value = palletCountInput,
-                onValueChange = { palletCountInput = it.filter { c -> c.isDigit() } },
-                label = { Text("Pallet count") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(palletFocusRequester)
+            Text("Pallet atau Carton Qty", style = MaterialTheme.typography.labelMedium)
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = palletCountInput,
+                    onValueChange = { newValue ->
+                        palletCountInput = newValue.filter { c -> c.isDigit() }
+                        if (palletCountInput.isNotEmpty()) {
+                            cartonQtyInput = ""
+                        }
+                    },
+                    label = { Text("Pallet") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = cartonQtyInput,
+                    onValueChange = { newValue ->
+                        cartonQtyInput = newValue.filter { c -> c.isDigit() }
+                        if (cartonQtyInput.isNotEmpty()) {
+                            palletCountInput = ""
+                        }
+                    },
+                    label = { Text("Carton Qty") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "$activePalletCartonQty cartons/pallet",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            val palletCount = palletCountInput.toIntOrNull()
-            if (palletCount != null) {
+            resolvedQty?.let { qty ->
                 Text(
-                    "= ${palletCount * activePalletCartonQty} units",
+                    "= $qty units",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -277,8 +320,7 @@ fun MoveV2Screen(navController: NavHostController) {
 
             Button(
                 onClick = {
-                    val count = palletCountInput.toIntOrNull() ?: return@Button
-                    val qty = count * activePalletCartonQty
+                    val qty = resolvedQty ?: return@Button
                     val isDefaultMove = selectedTrackedItem == null
 
                     submitting = true
@@ -297,7 +339,7 @@ fun MoveV2Screen(navController: NavHostController) {
                             )
                             submitting = false
                             if (response.isSuccessful) {
-                                success = "Moved $count pallet(s) ($qty units) of $activeItemSku"
+                                success = "Moved $qty units of $activeItemSku"
                                 resetForm()
                                 sourceFocusRequester.requestFocus()
                             } else {
@@ -309,7 +351,7 @@ fun MoveV2Screen(navController: NavHostController) {
                         }
                     }
                 },
-                enabled = !submitting && palletCountInput.toIntOrNull() != null,
+                enabled = !submitting && resolvedQty != null,
                 modifier = Modifier.fillMaxWidth().height(56.dp)
             ) {
                 Text(if (submitting) "Moving..." else "Confirm Move")

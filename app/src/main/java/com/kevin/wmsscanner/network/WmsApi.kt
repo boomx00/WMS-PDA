@@ -35,6 +35,8 @@ data class PickResponse(val locationCode: String, val itemSku: String, val quant
 data class ShipV2Request(val soNumber: String, val label: String, val quantity: Int)
 data class ShipV2Response(val itemSku: String, val quantityShipped: Int, val remainingOnOrder: Int)
 data class BarcodeItemLookupResponse(val sku: String, val name: String, val palletCartonQty: Int)
+data class ClaimRequest(val itemSku: String, val quantity: Int)
+
 data class LabelStockLookupResponse(
     val itemSku: String,
     val itemName: String,
@@ -42,7 +44,9 @@ data class LabelStockLookupResponse(
     val palletCartonQty: Int? = null,
     val orderedQty: Int? = null,
     val alreadyShipped: Int? = null,
-    val remaining: Int? = null
+    val remaining: Int? = null,
+    val availableToShip: Int? = null,
+    val unclaimedInOutboundWh: Int? = null
 )
 data class SessionSummary(
     val soNumber: String,
@@ -281,4 +285,10 @@ interface WmsApi {
     ): Response<OpnameCountResponse>
     @POST("api/stock-opname/custom")
     suspend fun createCustomOpname(@Body request: CreateCustomOpnameRequest): Response<OpnameSession>
+
+    @POST("api/sales-orders/{soNumber}/claim")
+    suspend fun claimStock(
+        @Path("soNumber") soNumber: String,
+        @Body request: ClaimRequest
+    ): Response<Unit>
 }

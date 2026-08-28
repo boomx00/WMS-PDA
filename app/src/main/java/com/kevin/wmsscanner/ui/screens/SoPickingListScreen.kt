@@ -63,9 +63,9 @@ fun SoPickingListScreen(navController: NavHostController, soNumber: String) {
             Text(error!!, color = MaterialTheme.colorScheme.error)
         } else {
             lines.forEach { line ->
-                val done = line.remaining <= 0
+//                val done = line.remaining <= 0
                 Card(
-                    onClick = { if (!done) activeLine = line },
+                    onClick = {activeLine = line },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                 ) {
                     Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
@@ -74,12 +74,23 @@ fun SoPickingListScreen(navController: NavHostController, soNumber: String) {
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(line.itemSku)
-                            Text(if (done) "DONE" else "${line.pickedQty}/${line.orderedQty}")
+                            Text("${line.pickedQty}/${line.orderedQty}")
                         }
                         Text(line.itemName, style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
+//            lines.forEach { line ->
+//                Card(
+//                    onClick = { activeLine = line },
+//                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+//                ) {
+//                    Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+//                        Text(line.itemSku, style = MaterialTheme.typography.titleSmall)
+//                        Text(line.itemName, style = MaterialTheme.typography.bodySmall)
+//                    }
+//                }
+//            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -189,8 +200,12 @@ fun PickPopup(
     }
 
     Dialog(onDismissRequest = onDismiss) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(20.dp)) {
+        Card(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.85f)) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
                 Text(line.itemSku, style = MaterialTheme.typography.titleMedium)
                 Text(line.itemName, style = MaterialTheme.typography.bodySmall)
                 Text(

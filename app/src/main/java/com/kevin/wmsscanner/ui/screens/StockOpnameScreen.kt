@@ -23,6 +23,7 @@ import com.kevin.wmsscanner.ui.components.CameraScanButton
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
 import com.kevin.wmsscanner.network.OpnameReportResponse
+
 @Composable
 fun StockOpnameScreen(navController: NavHostController) {
     var sessions by remember { mutableStateOf<List<OpnameSession>>(emptyList()) }
@@ -349,8 +350,12 @@ fun OpnameCountDialog(
     }
 
     Dialog(onDismissRequest = onDismiss) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(20.dp)) {
+        Card(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.85f)) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
                 Text(
                     if (initial.editing) "Edit Count" else "Count",
                     style = MaterialTheme.typography.titleMedium
