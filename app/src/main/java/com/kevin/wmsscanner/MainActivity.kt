@@ -103,5 +103,25 @@ fun WmsApp() {
         composable("move_v2") { MoveV2Screen(navController) }
 
         composable("move_in_v2") { MoveInV2Screen(navController) }
-        composable("outbound_wh_contents") { OutboundWhContentsScreen(navController) }    }
+        composable("outbound_wh_contents") { OutboundWhContentsScreen(navController) }
+        composable(
+            "tambahan_picking/{soNumber}",
+            arguments = listOf(navArgument("soNumber") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val soNumber = backStackEntry.arguments?.getString("soNumber") ?: ""
+            TambahanPickingScreen(navController, soNumber)
+        }
+        composable(
+            "tambahan_ship/{soNumber}/{expectedSku}",
+            arguments = listOf(
+                navArgument("soNumber") { type = NavType.StringType },
+                navArgument("expectedSku") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val soNumber = backStackEntry.arguments?.getString("soNumber") ?: ""
+            val expectedSku = backStackEntry.arguments?.getString("expectedSku") ?: ""
+            TambahanShipScreen(navController, soNumber, expectedSku)
+        }
+    }
+
 }

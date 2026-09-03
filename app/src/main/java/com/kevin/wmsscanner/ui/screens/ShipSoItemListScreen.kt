@@ -11,19 +11,27 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.kevin.wmsscanner.network.NetworkModule
 import com.kevin.wmsscanner.network.SoLookupLine
-
+import com.kevin.wmsscanner.network.TambahanItemLine
 @Composable
 fun ShipSoItemListScreen(navController: NavHostController, soNumber: String) {
     var lines by remember { mutableStateOf<List<SoLookupLine>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-
+    var tambahanItems by remember { mutableStateOf<List<TambahanItemLine>>(emptyList()) }
     LaunchedEffect(Unit) {
         loading = true
         try {
             val response = NetworkModule.api.lookupSalesOrder(soNumber)
             if (response.isSuccessful) {
                 lines = response.body()?.items ?: emptyList()
+                try {
+                    val tResponse = NetworkModule.api.getTambahan(soNumber)
+                    if (tResponse.isSuccessful) {
+                        tambahanItems = tResponse.body()?.items ?: emptyList()
+                    }
+                } catch (e: Exception) {
+                    // Non-fatal
+                }
             } else {
                 error = "Failed to load SO"
             }
@@ -87,6 +95,38 @@ fun ShipSoItemListScreen(navController: NavHostController, soNumber: String) {
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+            }
+            if (tambahanItems.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    "Tambahan",
+                    style = MaterialTheme.typography.titleMedium,
+                    textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                tambahanItems.forEach { line ->
+                    val done = line.shippedQty >= line.pickedQty
+                    Card(
+                        onClick = {
+                            if (!done) {
+                                navController.navigate("tambahan_ship/$soNumber/${line.itemSku}")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(line.itemSku, fontWeight = FontWeight.Medium)
+                                Text("${line.shippedQty}/${line.pickedQty}")
+                            }
+                            Text(line.itemName, style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }

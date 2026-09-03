@@ -11,7 +11,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.kevin.wmsscanner.network.NetworkModule
 import com.kevin.wmsscanner.network.OpenSalesOrder
-
+import kotlinx.coroutines.delay
 // Shared by both Picking (by SO) and Shipping — a searchable list of every
 // open SO, sorted IN_PROGRESS first, then PENDING. Tapping one navigates
 // to whatever destination route pattern the caller provides.
@@ -25,7 +25,8 @@ fun OpenSoListScreen(
     var orders by remember { mutableStateOf<List<OpenSalesOrder>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-
+    var searchResults by remember { mutableStateOf<List<OpenSalesOrder>?>(null) }
+    var searching by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         try {
             val response = NetworkModule.api.getOpenSalesOrders()
@@ -39,9 +40,29 @@ fun OpenSoListScreen(
         }
         loading = false
     }
-
-    val filtered = orders.filter { it.soNumber.contains(search.trim(), ignoreCase = true) }
-
+    LaunchedEffect(search) {
+        val query = search.trim()
+        if (query.isBlank()) {
+            searchResults = null
+            return@LaunchedEffect
+        }
+        delay(300)
+        searching = true
+        try {
+            val response = NetworkModule.api.searchAnySalesOrders(query)
+            if (response.isSuccessful) {
+                searchResults = response.body() ?: emptyList()
+            }
+        } catch (e: Exception) {
+            // Non-fatal — falls back to whatever's already showing
+        }
+        searching = false
+    }
+    // While the box is empty, show the normal "open" list (excludes DONE).
+    // Once the driver types something, switch to the broader search that
+    // includes DONE orders too — so a completed SO with a pending Tambahan
+    // can still be found and opened.
+    val filtered = searchResults ?: orders.filter { it.soNumber.contains(search.trim(), ignoreCase = true) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -61,7 +82,7 @@ fun OpenSoListScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (loading) {
+        if (loading || searching) {
             CircularProgressIndicator()
         } else if (error != null) {
             Text(error!!, color = MaterialTheme.colorScheme.error)
@@ -74,6 +95,7 @@ fun OpenSoListScreen(
         } else {
             filtered.forEach { order ->
                 val (label, color) = when (order.status) {
+                    "DONE" -> "DONE" to MaterialTheme.colorScheme.primary
                     "IN_PROGRESS" -> "IN PROGRESS" to MaterialTheme.colorScheme.tertiary
                     else -> "PENDING" to MaterialTheme.colorScheme.error
                 }

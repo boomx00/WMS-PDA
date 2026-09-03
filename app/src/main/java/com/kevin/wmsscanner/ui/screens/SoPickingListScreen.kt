@@ -20,7 +20,7 @@ import com.kevin.wmsscanner.network.PickSummaryLine
 import com.kevin.wmsscanner.ui.components.CameraScanButton
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
+import com.kevin.wmsscanner.network.TambahanItemLine
 @Composable
 fun SoPickingListScreen(navController: NavHostController, soNumber: String) {
     var lines by remember { mutableStateOf<List<PickSummaryLine>>(emptyList()) }
@@ -28,13 +28,24 @@ fun SoPickingListScreen(navController: NavHostController, soNumber: String) {
     var error by remember { mutableStateOf<String?>(null) }
     var activeLine by remember { mutableStateOf<PickSummaryLine?>(null) }
     val scope = rememberCoroutineScope()
-
+    var tambahanItems by remember { mutableStateOf<List<TambahanItemLine>>(emptyList()) }
+    var tambahanNumber by remember { mutableStateOf<String?>(null) }
     suspend fun refresh() {
         loading = true
         try {
             val response = NetworkModule.api.getPickSummary(soNumber)
             if (response.isSuccessful) {
                 lines = response.body()?.items ?: emptyList()
+                try {
+                    val tResponse = NetworkModule.api.getTambahan(soNumber)
+                    if (tResponse.isSuccessful) {
+                        val body = tResponse.body()
+                        tambahanNumber = body?.tambahan?.tambahanNumber
+                        tambahanItems = body?.items ?: emptyList()
+                    }
+                } catch (e: Exception) {
+                    // Non-fatal — Tambahan section just stays empty if this fails
+                }
             } else {
                 error = "Failed to load SO"
             }
@@ -79,6 +90,46 @@ fun SoPickingListScreen(navController: NavHostController, soNumber: String) {
                         Text(line.itemName, style = MaterialTheme.typography.bodySmall)
                     }
                 }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                "Tambahan",
+                style = MaterialTheme.typography.titleMedium,
+                textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (tambahanItems.isEmpty()) {
+                Text(
+                    "Belum ada barang tambahan.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                tambahanItems.forEach { line ->
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(line.itemSku)
+                                Text("${line.pickedQty}") // Tambahan has no target — just qty picked
+                            }
+                            Text(line.itemName, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedButton(
+                onClick = { navController.navigate("tambahan_picking/$soNumber") },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("+ Tambahan")
             }
 //            lines.forEach { line ->
 //                Card(

@@ -68,7 +68,47 @@ data class MoveRequest(
     val newLocationCode: String,
     val quantity: Int? = null
 )
-
+data class TambahanPickRequest(
+    val locationCode: String,
+    val itemSku: String,
+    val quantity: Int,
+    val soNumber: String
+)
+data class TambahanPickResponse(
+    val locationCode: String,
+    val itemSku: String,
+    val quantityPicked: Int,
+    val tambahanNumber: String
+)
+data class TambahanShipRequest(
+    val soNumber: String,
+    val label: String,
+    val quantity: Int
+)
+data class TambahanShipResponse(
+    val itemSku: String,
+    val quantityShipped: Int,
+    val remainingToShip: Int
+)
+data class TambahanItemLine(
+    val itemId: Int,
+    val itemSku: String,
+    val itemName: String,
+    val pickedQty: Int,
+    val shippedQty: Int
+)
+data class TambahanInfo(
+    val id: Int,
+    val tambahanNumber: String,
+    val status: String,
+    val convertedSalesOrderId: Int?,
+    val convertedAt: String?,
+    val createdAt: String
+)
+data class TambahanSummaryResponse(
+    val tambahan: TambahanInfo?,
+    val items: List<TambahanItemLine>
+)
 data class AppVersionResponse(
     val versionCode: Int,
     val versionName: String,
@@ -300,4 +340,16 @@ interface WmsApi {
         @Path("soNumber") soNumber: String,
         @Body request: ClaimRequest
     ): Response<Unit>
+
+    @GET("api/sales-orders/{soNumber}/tambahan")
+    suspend fun getTambahan(@Path("soNumber") soNumber: String): Response<TambahanSummaryResponse>
+
+    @PATCH("api/location-stock/additional-pick")
+    suspend fun pickTambahan(@Body request: TambahanPickRequest): Response<TambahanPickResponse>
+
+    @PATCH("api/location-stock/additional-ship")
+    suspend fun shipTambahan(@Body request: TambahanShipRequest): Response<TambahanShipResponse>
+
+    @GET("api/sales-orders/search-any")
+    suspend fun searchAnySalesOrders(@Query("q") q: String): Response<List<OpenSalesOrder>>
 }
