@@ -11,16 +11,17 @@ data class ParsedLabel(
 // delimiter, stripped if present). Example: *14013024102*0004*5000*MO007449
 //
 // SKU length varies by product — it isn't checked here, it's validated
-// against the item database server-side. Everything after the SKU is
-// fixed-width, though, so a mis-scan (torn label, partial read, wrong
-// barcode entirely) is caught immediately instead of silently producing
-// a garbage quantity or work order:
+// against the item database server-side. palletSeq and qty are
+// fixed-width, but the work order's digit count varies (e.g. "MO0001" and
+// "MO007449" are both valid) — only the "MO" prefix and the optional
+// 2-letter suffix are fixed:
 //   - palletSeq : exactly 4 digits   (e.g. "0004")
 //   - qty       : exactly 4 digits   (e.g. "5000")
-//   - workOrder : "MO" + exactly 6 digits, 8 chars total (e.g. "MO007449")
+//   - workOrder : "MO" + 1-10 digits, optionally followed by a 2-letter
+//                 suffix (e.g. "MO0001", "MO007449", "MO007449-DY")
 private val PALLET_SEQ_REGEX = Regex("^\\d{4}$")
 private val QTY_REGEX = Regex("^\\d{4}$")
-private val WORK_ORDER_REGEX = Regex("^MO\\d{6}$")
+private val WORK_ORDER_REGEX = Regex("^MO\\d{1,10}(-[A-Za-z]{2})?$")
 
 fun parseLabel(raw: String): ParsedLabel? {
     val cleaned = raw.trim().removePrefix("*")

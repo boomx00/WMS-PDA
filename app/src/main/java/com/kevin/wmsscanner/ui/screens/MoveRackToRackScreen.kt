@@ -22,6 +22,12 @@ import org.json.JSONObject
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 
+private sealed class MoveResult {
+    data class Success(val message: String) : MoveResult()
+    data class ServerFailure(val message: String, val needsQuantity: Boolean = false) : MoveResult()
+    data class NetworkFailure(val message: String) : MoveResult()
+}
+
 @Composable
 fun MoveRackToRackScreen(navController: NavHostController) {
     var labelInput by remember { mutableStateOf("") }
@@ -29,9 +35,8 @@ fun MoveRackToRackScreen(navController: NavHostController) {
     var newLocationInput by remember { mutableStateOf("") }
     var quantityInput by remember { mutableStateOf("") }
     var needsQuantity by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var success by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
+    var resultDialog by remember { mutableStateOf<MoveResult?>(null) }
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
     val labelFocusRequester = remember { FocusRequester() }
@@ -45,8 +50,7 @@ fun MoveRackToRackScreen(navController: NavHostController) {
 
     LaunchedEffect(Unit) {
         ScanBus.scans.collect { code ->
-            error = null
-            success = null
+            resultDialog = null
             when {
                 labelInput.isBlank() -> {
                     labelInput = code
@@ -78,8 +82,7 @@ fun MoveRackToRackScreen(navController: NavHostController) {
             value = labelInput,
             onValueChange = {
                 labelInput = it
-                error = null
-                success = null
+                resultDialog = null
             },
             label = { Text("Scan pallet label") },
             singleLine = true,
@@ -102,8 +105,7 @@ fun MoveRackToRackScreen(navController: NavHostController) {
             value = currentLocationInput,
             onValueChange = {
                 currentLocationInput = it
-                error = null
-                success = null
+                resultDialog = null
             },
             label = { Text("Scan current location") },
             singleLine = true,
@@ -123,8 +125,7 @@ fun MoveRackToRackScreen(navController: NavHostController) {
             value = newLocationInput,
             onValueChange = {
                 newLocationInput = it
-                error = null
-                success = null
+                resultDialog = null
             },
             label = { Text("Scan new location") },
             singleLine = true,
@@ -154,19 +155,9 @@ fun MoveRackToRackScreen(navController: NavHostController) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        if (error != null) {
-            Text(error!!, color = MaterialTheme.colorScheme.error)
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-        if (success != null) {
-            Text(success!!, color = MaterialTheme.colorScheme.primary)
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-
         Button(
             onClick = {
-                error = null
-                success = null
+                resultDialog = null
                 loading = true
                 scope.launch {
                     try {
@@ -180,29 +171,48 @@ fun MoveRackToRackScreen(navController: NavHostController) {
                         )
                         loading = false
                         if (response.isSuccessful) {
-                            success = "Moved ${labelInput.trim()} to ${newLocationInput.trim()}"
-                            labelInput = ""
-                            currentLocationInput = ""
-                            newLocationInput = ""
-                            quantityInput = ""
-                            needsQuantity = false
-                            labelFocusRequester.requestFocus()
+                            resultDialog = MoveResult.Success(
+                                "Moved ${labelInput.trim()} to ${newLocationInput.trim()}"
+                            )
+                            // Fields are cleared only when the user dismisses
+                            // the dialog (see below), so the popup can't be
+                            // closed out from under them by a side effect.
                         } else {
                             val errBody = response.errorBody()?.string()
                             val json = try { JSONObject(errBody ?: "{}") } catch (e: Exception) { JSONObject() }
-                            if (json.optString("matchType") == "default_needs_quantity") {
-                                needsQuantity = true
-                                error = "${json.optString("error")} (${json.optInt("availableQuantity")} available)"
-                            } else if (json.optString("matchType") == "auto_inbound_needs_quantity") {
-                                needsQuantity = true
-                                error = json.optString("error")
-                            } else {
-                                error = "Failed: ${json.optString("error", errBody ?: "unknown error")}"
+                            when (json.optString("matchType")) {
+                                "default_needs_quantity" -> {
+                                    needsQuantity = true
+                                    resultDialog = MoveResult.ServerFailure(
+                                        "${json.optString("error")} (${json.optInt("availableQuantity")} available)",
+                                        needsQuantity = true
+                                    )
+                                }
+                                "auto_inbound_needs_quantity" -> {
+                                    needsQuantity = true
+                                    resultDialog = MoveResult.ServerFailure(
+                                        json.optString("error"),
+                                        needsQuantity = true
+                                    )
+                                }
+                                else -> {
+                                    resultDialog = MoveResult.ServerFailure(
+                                        json.optString("error", errBody ?: "The server rejected this move (HTTP ${response.code()}).")
+                                    )
+                                }
                             }
                         }
+                    } catch (e: java.io.IOException) {
+                        // No response reached the server — likely a dead zone.
+                        loading = false
+                        resultDialog = MoveResult.NetworkFailure(
+                            "Couldn't reach the server. Check your connection and try again. " +
+                                    "If this keeps happening, move to an area with better signal " +
+                                    "before re-scanning."
+                        )
                     } catch (e: Exception) {
                         loading = false
-                        error = "Couldn't reach server: ${e.message}"
+                        resultDialog = MoveResult.ServerFailure("Unexpected error: ${e.message ?: "unknown"}")
                     }
                 }
             },
@@ -220,5 +230,36 @@ fun MoveRackToRackScreen(navController: NavHostController) {
         ) {
             Text("Back")
         }
+    }
+
+    resultDialog?.let { result ->
+        val (title, message) = when (result) {
+            is MoveResult.Success -> "Move Successful" to result.message
+            is MoveResult.ServerFailure -> "Move Failed" to result.message
+            is MoveResult.NetworkFailure -> "Connection Problem" to result.message
+        }
+
+        fun dismiss() {
+            resultDialog = null
+            if (result is MoveResult.Success) {
+                labelInput = ""
+                currentLocationInput = ""
+                newLocationInput = ""
+                quantityInput = ""
+                needsQuantity = false
+                labelFocusRequester.requestFocus()
+            }
+        }
+
+        AlertDialog(
+            onDismissRequest = { dismiss() },
+            title = { Text(title) },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { dismiss() }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 }

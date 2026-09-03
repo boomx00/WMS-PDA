@@ -23,6 +23,12 @@ import com.kevin.wmsscanner.ui.components.CameraScanButton
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+private sealed class MoveInResult {
+    data class Success(val message: String) : MoveInResult()
+    data class ServerFailure(val message: String) : MoveInResult()
+    data class NetworkFailure(val message: String) : MoveInResult()
+}
+
 @Composable
 fun MoveInV2Screen(navController: NavHostController) {
     var labelInput by remember { mutableStateOf("") }
@@ -32,9 +38,13 @@ fun MoveInV2Screen(navController: NavHostController) {
 
     var destinationInput by remember { mutableStateOf("") }
     var palletCountInput by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    var success by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
+
+    // Result dialog state: null = hidden. Distinguishing NetworkFailure from
+    // ServerFailure matters because connectivity is spotty in some areas of
+    // the warehouse — the driver needs to know whether to just retry, or
+    // whether the server actually rejected the scan.
+    var resultDialog by remember { mutableStateOf<MoveInResult?>(null) }
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
     val labelFocusRequester = remember { FocusRequester() }
@@ -60,8 +70,7 @@ fun MoveInV2Screen(navController: NavHostController) {
     LaunchedEffect(labelInput) {
         lookupItem = null
         lookupError = null
-        error = null
-        success = null
+        resultDialog = null
 
         if (labelInput.isBlank()) return@LaunchedEffect
 
@@ -137,8 +146,7 @@ fun MoveInV2Screen(navController: NavHostController) {
             value = destinationInput,
             onValueChange = {
                 destinationInput = it
-                error = null
-                success = null
+                resultDialog = null
             },
             label = { Text("Scan destination location") },
             singleLine = true,
@@ -176,23 +184,13 @@ fun MoveInV2Screen(navController: NavHostController) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        if (error != null) {
-            Text(error!!, color = MaterialTheme.colorScheme.error)
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-        if (success != null) {
-            Text(success!!, color = MaterialTheme.colorScheme.primary)
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-
         Button(
             onClick = {
                 val count = palletCountInput.toIntOrNull() ?: return@Button
                 val item = lookupItem ?: return@Button
                 val qty = count * item.palletCartonQty
 
-                error = null
-                success = null
+                resultDialog = null
                 loading = true
                 scope.launch {
                     try {
@@ -205,18 +203,35 @@ fun MoveInV2Screen(navController: NavHostController) {
                         )
                         loading = false
                         if (response.isSuccessful) {
-                            success = "Moved $qty cartons ($count pallet(s)) to ${destinationInput.trim()}"
-                            labelInput = ""
-                            lookupItem = null
-                            destinationInput = ""
-                            palletCountInput = ""
-                            labelFocusRequester.requestFocus()
+                            resultDialog = MoveInResult.Success(
+                                "Moved $qty cartons ($count pallet(s)) to ${destinationInput.trim()}"
+                            )
+                            // Fields are cleared only when the user dismisses
+                            // the dialog (see below) — clearing labelInput
+                            // here would re-trigger the label LaunchedEffect,
+                            // which resets resultDialog and closes the popup
+                            // before the user can read it.
                         } else {
-                            error = "Failed: ${response.errorBody()?.string() ?: "unknown error"}"
+                            resultDialog = MoveInResult.ServerFailure(
+                                response.errorBody()?.string()?.takeIf { it.isNotBlank() }
+                                    ?: "The server rejected this move (HTTP ${response.code()})."
+                            )
                         }
+                    } catch (e: java.io.IOException) {
+                        // Covers UnknownHostException, SocketTimeoutException,
+                        // ConnectException, etc. — no response reached the
+                        // server, most likely a dead zone in the warehouse.
+                        loading = false
+                        resultDialog = MoveInResult.NetworkFailure(
+                            "Couldn't reach the server. Check your connection and try again. " +
+                                    "If this keeps happening, move to an area with better signal " +
+                                    "before re-scanning."
+                        )
                     } catch (e: Exception) {
                         loading = false
-                        error = "Couldn't reach server: ${e.message}"
+                        resultDialog = MoveInResult.ServerFailure(
+                            "Unexpected error: ${e.message ?: "unknown"}"
+                        )
                     }
                 }
             },
@@ -234,5 +249,38 @@ fun MoveInV2Screen(navController: NavHostController) {
         ) {
             Text("Back")
         }
+    }
+
+    resultDialog?.let { result ->
+        val (title, message) = when (result) {
+            is MoveInResult.Success -> "Move In Successful" to result.message
+            is MoveInResult.ServerFailure -> "Move In Failed" to result.message
+            is MoveInResult.NetworkFailure -> "Connection Problem" to result.message
+        }
+
+        fun dismiss() {
+            resultDialog = null
+            if (result is MoveInResult.Success) {
+                // Safe to reset the form now — the dialog is already gone,
+                // so the label LaunchedEffect firing on labelInput = "" has
+                // nothing left to close.
+                labelInput = ""
+                lookupItem = null
+                destinationInput = ""
+                palletCountInput = ""
+                labelFocusRequester.requestFocus()
+            }
+        }
+
+        AlertDialog(
+            onDismissRequest = { dismiss() },
+            title = { Text(title) },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { dismiss() }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 }

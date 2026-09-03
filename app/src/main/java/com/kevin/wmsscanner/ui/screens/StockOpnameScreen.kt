@@ -30,6 +30,7 @@ fun StockOpnameScreen(navController: NavHostController) {
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var activeSession by remember { mutableStateOf<String?>(null) }
+    var activeSessionStatus by remember { mutableStateOf<String?>(null) }
     var creatingCustom by remember { mutableStateOf(false) }
     var createError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -56,8 +57,10 @@ fun StockOpnameScreen(navController: NavHostController) {
     if (activeSession != null) {
         OpnameLocationsScreen(
             opnameNumber = activeSession!!,
+            initialStatus = activeSessionStatus,
             onBack = {
                 activeSession = null
+                activeSessionStatus = null
                 scope.launch { refresh() }
             }
         )
@@ -87,9 +90,11 @@ fun StockOpnameScreen(navController: NavHostController) {
                         val response = NetworkModule.api.createCustomOpname(CreateCustomOpnameRequest())
                         creatingCustom = false
                         if (response.isSuccessful) {
-                            val newOpname = response.body()?.opnameNumber
+                            val body = response.body()
+                            val newOpname = body?.opnameNumber
                             if (newOpname != null) {
                                 activeSession = newOpname
+                                activeSessionStatus = body.status
                             }
                         } else {
                             createError = "Failed: ${response.errorBody()?.string() ?: "unknown error"}"
@@ -131,7 +136,10 @@ fun StockOpnameScreen(navController: NavHostController) {
                     else -> "PENDING" to MaterialTheme.colorScheme.error
                 }
                 Card(
-                    onClick = { activeSession = s.opnameNumber },
+                    onClick = {
+                        activeSession = s.opnameNumber
+                        activeSessionStatus = s.status
+                    },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                 ) {
                     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
@@ -164,11 +172,16 @@ fun StockOpnameScreen(navController: NavHostController) {
 }
 
 @Composable
-fun OpnameLocationsScreen(opnameNumber: String, onBack: () -> Unit) {
+fun OpnameLocationsScreen(opnameNumber: String, initialStatus: String?, onBack: () -> Unit) {
     var report by remember { mutableStateOf<OpnameReportResponse?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var dialogState by remember { mutableStateOf<CountDialogState?>(null) }
+    // Once an opname is finished, past counts are locked from further edits —
+    // location, SKU, and quantity all become read-only. Before that, any
+    // saved count can be reopened and corrected (mis-scanned location, wrong
+    // SKU, etc.), not just its quantity.
+    var isFinished by remember { mutableStateOf(initialStatus == "DONE") }
     val scope = rememberCoroutineScope()
 
     suspend fun refresh() {
@@ -197,10 +210,18 @@ fun OpnameLocationsScreen(opnameNumber: String, onBack: () -> Unit) {
             .padding(24.dp)
     ) {
         Text(opnameNumber, style = MaterialTheme.typography.headlineMedium)
+        if (isFinished) {
+            Text(
+                "This opname is finished — counts are locked.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(
             onClick = { dialogState = CountDialogState() },
+            enabled = !isFinished,
             modifier = Modifier.fillMaxWidth().height(56.dp)
         ) {
             Text("Scan Location to Count")
@@ -236,7 +257,7 @@ fun OpnameLocationsScreen(opnameNumber: String, onBack: () -> Unit) {
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 4.dp)
-                                        .clickable {
+                                        .clickable(enabled = !isFinished) {
                                             dialogState = CountDialogState(
                                                 locationCode = loc.locationCode,
                                                 sku = item.itemSku,
@@ -273,6 +294,7 @@ fun OpnameLocationsScreen(opnameNumber: String, onBack: () -> Unit) {
                         val response = NetworkModule.api.finishOpname(opnameNumber)
                         finishing = false
                         if (response.isSuccessful) {
+                            isFinished = true
                             onBack()
                         } else {
                             finishError = "Failed: ${response.errorBody()?.string() ?: "unknown error"}"
@@ -283,7 +305,7 @@ fun OpnameLocationsScreen(opnameNumber: String, onBack: () -> Unit) {
                     }
                 }
             },
-            enabled = !finishing,
+            enabled = !finishing && !isFinished,
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
             modifier = Modifier.fillMaxWidth().height(56.dp)
         ) {
@@ -309,6 +331,7 @@ fun OpnameLocationsScreen(opnameNumber: String, onBack: () -> Unit) {
         OpnameCountDialog(
             opnameNumber = opnameNumber,
             initial = state,
+            isFinished = isFinished,
             onDismiss = {
                 dialogState = null
                 scope.launch { refresh() }
@@ -328,6 +351,7 @@ data class CountDialogState(
 fun OpnameCountDialog(
     opnameNumber: String,
     initial: CountDialogState,
+    isFinished: Boolean,
     onDismiss: () -> Unit
 ) {
     var locationInput by remember { mutableStateOf(initial.locationCode) }
@@ -339,7 +363,7 @@ fun OpnameCountDialog(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        if (initial.editing) return@LaunchedEffect
+        if (isFinished) return@LaunchedEffect
         ScanBus.scans.collect { code ->
             if (locationInput.isBlank()) {
                 locationInput = code
@@ -360,9 +384,22 @@ fun OpnameCountDialog(
                     if (initial.editing) "Edit Count" else "Count",
                     style = MaterialTheme.typography.titleMedium
                 )
-                if (!initial.editing) {
+                if (isFinished) {
+                    Text(
+                        "This opname is finished — locked from further edits.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else if (!initial.editing) {
                     Text(
                         "Scan location, then scan/type SKU, then enter carton amount",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        "Noticed a mistake? You can correct the location and SKU here too, " +
+                                "not just the quantity — as long as this opname isn't finished yet.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -374,11 +411,11 @@ fun OpnameCountDialog(
                     onValueChange = { locationInput = it },
                     label = { Text("Location") },
                     singleLine = true,
-                    readOnly = initial.editing,
+                    readOnly = isFinished,
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                if (!initial.editing) {
+                if (!isFinished) {
                     Spacer(modifier = Modifier.height(8.dp))
                     CameraScanButton(modifier = Modifier.fillMaxWidth())
                 }
@@ -390,11 +427,11 @@ fun OpnameCountDialog(
                     onValueChange = { scannedInput = it },
                     label = { Text("SKU") },
                     singleLine = true,
-                    readOnly = initial.editing,
+                    readOnly = isFinished,
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                if (!initial.editing) {
+                if (!isFinished) {
                     Spacer(modifier = Modifier.height(8.dp))
                     CameraScanButton(modifier = Modifier.fillMaxWidth())
                 }
@@ -406,6 +443,7 @@ fun OpnameCountDialog(
                     onValueChange = { countedInput = it.filter { c -> c.isDigit() } },
                     label = { Text("Carton amount") },
                     singleLine = true,
+                    readOnly = isFinished,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -424,52 +462,64 @@ fun OpnameCountDialog(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismiss) { Text("Close") }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            val counted = countedInput.toIntOrNull() ?: return@Button
-                            submitting = true
-                            error = null
-                            lastResult = null
-                            scope.launch {
-                                try {
-                                    val response = NetworkModule.api.submitOpnameCount(
-                                        opnameNumber,
-                                        OpnameCountRequest(
-                                            locationCode = locationInput.trim(),
-                                            scanned = scannedInput.trim(),
-                                            countedQty = counted
+                    if (!isFinished) {
+                        Button(
+                            onClick = {
+                                val counted = countedInput.toIntOrNull() ?: return@Button
+                                submitting = true
+                                error = null
+                                lastResult = null
+                                scope.launch {
+                                    try {
+                                        val response = NetworkModule.api.submitOpnameCount(
+                                            opnameNumber,
+                                            OpnameCountRequest(
+                                                locationCode = locationInput.trim(),
+                                                scanned = scannedInput.trim(),
+                                                countedQty = counted,
+                                                originalLocationCode = if (initial.editing) initial.locationCode else null,
+                                                originalSku = if (initial.editing) initial.sku else null
+                                            )
                                         )
-                                    )
-                                    submitting = false
-                                    if (response.isSuccessful) {
-                                        val body = response.body()
-                                        lastResult = "Saved ${body?.itemSku} at ${body?.locationCode}: $counted"
-                                        if (!initial.editing) {
-                                            scannedInput = ""
-                                            countedInput = ""
+                                        submitting = false
+                                        if (response.isSuccessful) {
+                                            val body = response.body()
+                                            lastResult = "Saved ${body?.itemSku} at ${body?.locationCode}: $counted"
+                                            if (!initial.editing) {
+                                                scannedInput = ""
+                                                countedInput = ""
+                                            }
+                                        } else {
+                                            error = "Failed: ${response.errorBody()?.string() ?: "unknown error"}"
                                         }
-                                    } else {
-                                        error = "Failed: ${response.errorBody()?.string() ?: "unknown error"}"
+                                    } catch (e: Exception) {
+                                        submitting = false
+                                        error = "Couldn't reach server: ${e.message}"
                                     }
-                                } catch (e: Exception) {
-                                    submitting = false
-                                    error = "Couldn't reach server: ${e.message}"
                                 }
-                            }
-                        },
-                        enabled = locationInput.isNotBlank() && scannedInput.isNotBlank() && countedInput.toIntOrNull() != null && !submitting
-                    ) {
-                        Text(if (submitting) "Saving..." else "Save")
+                            },
+                            enabled = locationInput.isNotBlank() && scannedInput.isNotBlank() && countedInput.toIntOrNull() != null && !submitting
+                        ) {
+                            Text(if (submitting) "Saving..." else "Save")
+                        }
                     }
                 }
 
-                if (!initial.editing) {
+                if (!isFinished) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    TextButton(
-                        onClick = { locationInput = "" },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Clear location (move to a different cell)")
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        TextButton(
+                            onClick = { locationInput = "" },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Clear location")
+                        }
+                        TextButton(
+                            onClick = { scannedInput = "" },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Clear SKU")
+                        }
                     }
                 }
             }

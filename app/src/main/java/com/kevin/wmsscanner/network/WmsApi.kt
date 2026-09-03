@@ -22,7 +22,16 @@ data class LocationStockItem(
     val quantity: Int
 )
 data class OpnameLocationRow(val locationCode: String, val total: Int, val counted: Int, val done: Boolean)
-data class OpnameCountRequest(val locationCode: String, val scanned: String, val countedQty: Int)
+data class OpnameCountRequest(
+    val locationCode: String,
+    val scanned: String,
+    val countedQty: Int,
+    // Only sent when editing an already-saved line and the location or SKU
+    // was changed — lets the server find and update that original row
+    // instead of inserting a new one alongside it.
+    val originalLocationCode: String? = null,
+    val originalSku: String? = null
+)
 data class OpnameCountResponse(
     val itemSku: String,
     val itemName: String,
