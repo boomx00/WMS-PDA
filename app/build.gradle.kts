@@ -15,8 +15,8 @@ android {
         applicationId = "com.kevin.wmsscanner"
         minSdk = 26
         targetSdk = 37
-        versionCode = 22 // must be strictly higher than last time
-        versionName = "2.14"
+        versionCode = 25 // must be strictly higher than last time
+        versionName = "2.17"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

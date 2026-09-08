@@ -22,6 +22,8 @@ import com.kevin.wmsscanner.ui.components.CameraScanButton
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+
+
 @Composable
 fun TambahanPickingScreen(navController: NavHostController, soNumber: String) {
     var locationInput by remember { mutableStateOf("") }
@@ -29,7 +31,9 @@ fun TambahanPickingScreen(navController: NavHostController, soNumber: String) {
     var stockList by remember { mutableStateOf<List<LocationStockItem>>(emptyList()) }
     var selectedTrackedItem by remember { mutableStateOf<LocationStockItem?>(null) }
     var locationLooked by remember { mutableStateOf(false) }
-
+    var showResultDialog by remember { mutableStateOf(false) }
+    var resultMessage by remember { mutableStateOf("") }
+    var resultIsError by remember { mutableStateOf(false) }
     // Used only when locationType == "FLOOR" — manual SKU entry instead of
     // a tappable list, since Floor can hold many different SKUs at once.
     var skuInput by remember { mutableStateOf("") }
@@ -347,8 +351,6 @@ fun TambahanPickingScreen(navController: NavHostController, soNumber: String) {
                     val qty = resolvedQty ?: return@Button
                     val sku = activeSku ?: return@Button
                     submitting = true
-                    error = null
-                    success = null
                     scope.launch {
                         try {
                             val response = NetworkModule.api.pickTambahan(
@@ -361,16 +363,18 @@ fun TambahanPickingScreen(navController: NavHostController, soNumber: String) {
                             )
                             submitting = false
                             if (response.isSuccessful) {
-                                success = "Picked $qty of $sku for ${response.body()?.tambahanNumber}"
-                                resetForm()
-                                locationFocusRequester.requestFocus()
+                                resultMessage = "Picked $qty of $sku for ${response.body()?.tambahanNumber}"
+                                resultIsError = false
                             } else {
-                                error = "Failed: ${response.errorBody()?.string() ?: "unknown error"}"
+                                resultMessage = "Failed: ${response.errorBody()?.string() ?: "unknown error"}"
+                                resultIsError = true
                             }
                         } catch (e: Exception) {
                             submitting = false
-                            error = "Couldn't reach server: ${e.message}"
+                            resultMessage = "Couldn't reach server: ${e.message}"
+                            resultIsError = true
                         }
+                        showResultDialog = true
                     }
                 },
                 enabled = resolvedQty != null && !submitting,
@@ -388,5 +392,23 @@ fun TambahanPickingScreen(navController: NavHostController, soNumber: String) {
         ) {
             Text("Back")
         }
+    }
+    if (showResultDialog) {
+        AlertDialog(
+            onDismissRequest = { /* require explicit OK — no dismiss-on-outside-tap */ },
+            title = { Text(if (resultIsError) "Pick Failed" else "Pick Successful") },
+            text = { Text(resultMessage) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showResultDialog = false
+                    if (!resultIsError) {
+                        resetForm()
+                        locationFocusRequester.requestFocus()
+                    }
+                }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 }

@@ -33,7 +33,7 @@ data class OpnameCountRequest(
     val originalSku: String? = null
 )
 data class OpnameCountResponse(
-    val itemSku: String,
+    val itemSku: String? = null,
     val itemName: String,
     val countedQty: Int,
     val difference: Int? = null,
@@ -44,6 +44,7 @@ data class PickResponse(val locationCode: String, val itemSku: String, val quant
 data class ShipV2Request(val soNumber: String, val label: String, val quantity: Int)
 data class ShipV2Response(val itemSku: String, val quantityShipped: Int, val remainingOnOrder: Int)
 data class BarcodeItemLookupResponse(val sku: String, val name: String, val palletCartonQty: Int)
+data class ItemSearchResult(val sku: String, val name: String, val palletCartonQty: Int)
 data class ClaimRequest(val itemSku: String, val quantity: Int)
 
 data class LabelStockLookupResponse(
@@ -221,7 +222,7 @@ data class PickSummaryResponse(val soNumber: String, val items: List<PickSummary
 
 data class CreateCustomOpnameRequest(val notes: String? = null)
 data class OpnameReportItem(
-    val itemSku: String,
+    val itemSku: String? = null,
     val itemName: String,
     val countedQty: Int,
     val countedAt: String?,
@@ -275,7 +276,7 @@ interface WmsApi {
         @Query("label") label: String,
         @Query("locationCode") locationCode: String
     ): Response<PalletLookupResponse>
-  
+
 
     // ...inside the existing WmsApi interface, add these two:
     @PATCH("api/sales-orders/assign-checker")
@@ -301,6 +302,8 @@ interface WmsApi {
     suspend fun shipV2(@Body request: ShipV2Request): Response<ShipV2Response>
     @GET("api/items/lookup-by-barcode")
     suspend fun lookupItemByBarcode(@Query("barcode") barcode: String): Response<BarcodeItemLookupResponse>
+    @GET("api/items/search")
+    suspend fun searchItems(@Query("q") q: String): Response<List<ItemSearchResult>>
     @GET("api/location-stock/lookup-by-label")
     suspend fun lookupStockByLabel(
         @Query("label") label: String,

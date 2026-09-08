@@ -19,8 +19,10 @@ import com.kevin.wmsscanner.network.NetworkModule
 import com.kevin.wmsscanner.network.OpnameCountRequest
 import com.kevin.wmsscanner.network.OpnameLocationRow
 import com.kevin.wmsscanner.network.OpnameSession
+import com.kevin.wmsscanner.network.ItemSearchResult
 import com.kevin.wmsscanner.ui.components.CameraScanButton
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.clickable
 import com.kevin.wmsscanner.network.OpnameReportResponse
 
@@ -260,18 +262,26 @@ fun OpnameLocationsScreen(opnameNumber: String, initialStatus: String?, onBack: 
                                         .clickable(enabled = !isFinished) {
                                             dialogState = CountDialogState(
                                                 locationCode = loc.locationCode,
-                                                sku = item.itemSku,
-                                                qty = item.countedQty.toString(),
+                                                sku = item.itemSku ?: "",
+                                                qty = if (item.itemSku == null) "" else item.countedQty.toString(),
                                                 editing = true
                                             )
                                         },
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Column {
-                                        Text(item.itemSku, style = MaterialTheme.typography.bodyMedium)
-                                        Text(item.itemName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        if (item.itemSku != null) {
+                                            Text(item.itemSku, style = MaterialTheme.typography.bodyMedium)
+                                        }
+                                        Text(
+                                            item.itemName,
+                                            style = if (item.itemSku != null) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
-                                    Text("${item.countedQty}", color = MaterialTheme.colorScheme.primary)
+                                    if (item.itemSku != null) {
+                                        Text("${item.countedQty}", color = MaterialTheme.colorScheme.primary)
+                                    }
                                 }
                             }
                         }
@@ -362,6 +372,39 @@ fun OpnameCountDialog(
     var lastResult by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    // Live SKU lookup/search — resolves the product name once the typed or
+    // scanned SKU matches an item exactly, and otherwise offers a LIKE-style
+    // pick list (matches by SKU or product name, e.g. typing "XL38" also
+    // surfaces names written as "XL 38" or "XL38+4").
+    var resolvedItemName by remember { mutableStateOf<String?>(null) }
+    var skuSuggestions by remember { mutableStateOf<List<ItemSearchResult>>(emptyList()) }
+    var skuLookupLoading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(scannedInput) {
+        resolvedItemName = null
+        skuSuggestions = emptyList()
+        val query = scannedInput.trim()
+        if (isFinished || query.length < 2) return@LaunchedEffect
+        delay(350)
+
+        skuLookupLoading = true
+        try {
+            val response = NetworkModule.api.searchItems(query)
+            skuLookupLoading = false
+            if (response.isSuccessful) {
+                val results = response.body() ?: emptyList()
+                val exact = results.firstOrNull { it.sku.equals(query, ignoreCase = true) }
+                if (exact != null) {
+                    resolvedItemName = exact.name
+                } else {
+                    skuSuggestions = results
+                }
+            }
+        } catch (e: Exception) {
+            skuLookupLoading = false
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (isFinished) return@LaunchedEffect
         ScanBus.scans.collect { code ->
@@ -392,7 +435,8 @@ fun OpnameCountDialog(
                     )
                 } else if (!initial.editing) {
                     Text(
-                        "Scan location, then scan/type SKU, then enter carton amount",
+                        "Scan location, then scan/type SKU, then enter carton amount. " +
+                                "If the location is empty, leave SKU and carton amount blank.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -431,6 +475,53 @@ fun OpnameCountDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                if (skuLookupLoading) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Checking...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else if (resolvedItemName != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        resolvedItemName!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else if (skuSuggestions.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Did you mean:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        skuSuggestions.take(8).forEach { result ->
+                            Card(
+                                onClick = {
+                                    scannedInput = result.sku
+                                    resolvedItemName = result.name
+                                    skuSuggestions = emptyList()
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
+                                    Text(result.sku, style = MaterialTheme.typography.labelMedium)
+                                    Text(
+                                        result.name,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if (!isFinished) {
                     Spacer(modifier = Modifier.height(8.dp))
                     CameraScanButton(modifier = Modifier.fillMaxWidth())
@@ -463,9 +554,18 @@ fun OpnameCountDialog(
                     TextButton(onClick = onDismiss) { Text("Close") }
                     Spacer(modifier = Modifier.width(8.dp))
                     if (!isFinished) {
+                        // Two valid states: SKU + qty both filled in (a normal
+                        // count), or both left blank (the location was checked
+                        // and found empty). Anything half-filled is blocked so
+                        // a stray tap can't submit a bogus qty=0-for-a-real-SKU
+                        // line by accident.
+                        val markingEmpty = scannedInput.isBlank() && countedInput.isBlank()
+                        val isValid = locationInput.isNotBlank() &&
+                                (markingEmpty || (scannedInput.isNotBlank() && countedInput.toIntOrNull() != null))
+
                         Button(
                             onClick = {
-                                val counted = countedInput.toIntOrNull() ?: return@Button
+                                val counted = if (markingEmpty) 0 else (countedInput.toIntOrNull() ?: return@Button)
                                 submitting = true
                                 error = null
                                 lastResult = null
@@ -484,7 +584,11 @@ fun OpnameCountDialog(
                                         submitting = false
                                         if (response.isSuccessful) {
                                             val body = response.body()
-                                            lastResult = "Saved ${body?.itemSku} at ${body?.locationCode}: $counted"
+                                            lastResult = if (body?.itemSku != null) {
+                                                "Saved ${body.itemSku} at ${body.locationCode}: $counted"
+                                            } else {
+                                                "${body?.locationCode ?: locationInput.trim()} tercatat kosong"
+                                            }
                                             if (!initial.editing) {
                                                 scannedInput = ""
                                                 countedInput = ""
@@ -498,9 +602,9 @@ fun OpnameCountDialog(
                                     }
                                 }
                             },
-                            enabled = locationInput.isNotBlank() && scannedInput.isNotBlank() && countedInput.toIntOrNull() != null && !submitting
+                            enabled = isValid && !submitting
                         ) {
-                            Text(if (submitting) "Saving..." else "Save")
+                            Text(if (submitting) "Saving..." else if (markingEmpty) "Mark Empty" else "Save")
                         }
                     }
                 }

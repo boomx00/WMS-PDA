@@ -19,20 +19,20 @@ import com.kevin.wmsscanner.ScanBus
 import com.kevin.wmsscanner.network.NetworkModule
 import com.kevin.wmsscanner.network.TambahanShipRequest
 import com.kevin.wmsscanner.ui.components.CameraScanButton
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
 fun TambahanShipScreen(navController: NavHostController, soNumber: String, expectedSku: String) {
     var labelInput by remember { mutableStateOf("") }
     var quantityInput by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    var success by remember { mutableStateOf<String?>(null) }
     var submitting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
     val labelFocusRequester = remember { FocusRequester() }
     val quantityFocusRequester = remember { FocusRequester() }
+    var showResultDialog by remember { mutableStateOf(false) }
+    var resultMessage by remember { mutableStateOf("") }
+    var resultIsError by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         labelFocusRequester.requestFocus()
@@ -41,8 +41,6 @@ fun TambahanShipScreen(navController: NavHostController, soNumber: String, expec
     LaunchedEffect(Unit) {
         ScanBus.scans.collect { code ->
             labelInput = code
-            error = null
-            success = null
             quantityFocusRequester.requestFocus()
             keyboardController?.show()
         }
@@ -69,11 +67,7 @@ fun TambahanShipScreen(navController: NavHostController, soNumber: String, expec
 
         OutlinedTextField(
             value = labelInput,
-            onValueChange = {
-                labelInput = it
-                error = null
-                success = null
-            },
+            onValueChange = { labelInput = it },
             label = { Text("Scan pallet label") },
             singleLine = true,
             modifier = Modifier
@@ -104,21 +98,10 @@ fun TambahanShipScreen(navController: NavHostController, soNumber: String, expec
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        if (error != null) {
-            Text(error!!, color = MaterialTheme.colorScheme.error)
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-        if (success != null) {
-            Text(success!!, color = MaterialTheme.colorScheme.primary)
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-
         Button(
             onClick = {
                 val qty = quantityInput.toIntOrNull() ?: return@Button
                 submitting = true
-                error = null
-                success = null
                 scope.launch {
                     try {
                         val response = NetworkModule.api.shipTambahan(
@@ -126,17 +109,18 @@ fun TambahanShipScreen(navController: NavHostController, soNumber: String, expec
                         )
                         submitting = false
                         if (response.isSuccessful) {
-                            success = "Shipped $qty. Remaining: ${response.body()?.remainingToShip}"
-                            labelInput = ""
-                            quantityInput = ""
-                            labelFocusRequester.requestFocus()
+                            resultMessage = "Shipped $qty. Remaining: ${response.body()?.remainingToShip}"
+                            resultIsError = false
                         } else {
-                            error = "Failed: ${response.errorBody()?.string() ?: "unknown error"}"
+                            resultMessage = "Failed: ${response.errorBody()?.string() ?: "unknown error"}"
+                            resultIsError = true
                         }
                     } catch (e: Exception) {
                         submitting = false
-                        error = "Couldn't reach server: ${e.message}"
+                        resultMessage = "Couldn't reach server: ${e.message}"
+                        resultIsError = true
                     }
+                    showResultDialog = true
                 }
             },
             enabled = !submitting && labelInput.isNotBlank() && quantityInput.isNotBlank(),
@@ -153,5 +137,25 @@ fun TambahanShipScreen(navController: NavHostController, soNumber: String, expec
         ) {
             Text("Back")
         }
+    }
+
+    if (showResultDialog) {
+        AlertDialog(
+            onDismissRequest = { /* require explicit OK — no dismiss-on-outside-tap */ },
+            title = { Text(if (resultIsError) "Ship Failed" else "Ship Successful") },
+            text = { Text(resultMessage) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showResultDialog = false
+                    if (!resultIsError) {
+                        labelInput = ""
+                        quantityInput = ""
+                        labelFocusRequester.requestFocus()
+                    }
+                }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 }
