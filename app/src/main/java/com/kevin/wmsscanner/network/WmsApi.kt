@@ -180,7 +180,12 @@ data class MoveV2Request(
     val quantity: Int,
     val sourceUntracked: Boolean? = null
 )
-data class OpenSalesOrder(val soNumber: String, val orderDate: String, val status: String)
+data class OpenSalesOrder(
+    val soNumber: String,
+    val orderDate: String,
+    val status: String,
+    val matchNote: String? = null
+)
 data class MoveInV2Request(val label: String, val destinationLocationCode: String, val quantity: Int)
 data class SettingsResponse(
     val allowDefaultCodeTransactions: Boolean,
@@ -237,10 +242,22 @@ data class OpnameReportResponse(
     val countedLocations: Int,
     val report: List<OpnameReportLocation>
 )
+data class OpnameCountHistoryEntry(
+    val delta: Int,
+    val resultingTotal: Int,
+    val username: String?,
+    val createdAt: String
+)
 
 interface WmsApi {
     @GET("api/stock-opname/{opnameNumber}/report")
     suspend fun getOpnameReport(@Path("opnameNumber") opnameNumber: String): Response<OpnameReportResponse>
+    @GET("api/stock-opname/{opnameNumber}/count-history")
+    suspend fun getOpnameCountHistory(
+        @Path("opnameNumber") opnameNumber: String,
+        @Query("locationCode") locationCode: String,
+        @Query("sku") sku: String
+    ): Response<List<OpnameCountHistoryEntry>>
     @PATCH("api/stock-opname/{opnameNumber}/finish")
     suspend fun finishOpname(@Path("opnameNumber") opnameNumber: String): Response<Unit>
     @POST("api/auth/login")

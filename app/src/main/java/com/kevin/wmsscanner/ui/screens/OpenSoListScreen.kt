@@ -107,7 +107,14 @@ fun OpenSoListScreen(
                         modifier = Modifier.fillMaxWidth().padding(16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(order.soNumber, fontWeight = FontWeight.Medium)
+                        Text(order.soNumber, style = MaterialTheme.typography.titleMedium)
+                        if (order.matchNote != null) {
+                            Text(
+                                order.matchNote,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
                         Text(label, color = color, style = MaterialTheme.typography.labelMedium)
                     }
                 }
