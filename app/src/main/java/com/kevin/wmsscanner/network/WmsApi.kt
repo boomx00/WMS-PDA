@@ -8,7 +8,13 @@ import retrofit2.http.GET
 import retrofit2.http.Query
 import retrofit2.http.Path
 data class LoginRequest(val username: String, val password: String)
-data class LoginResponse(val id: Int, val username: String, val roleId: Int)
+data class LoginResponse(
+    val id: Int,
+    val username: String,
+    val roleId: Int,
+    val pdaPermissions: List<String>? = null
+)
+data class PdaAccessResponse(val pdaPermissions: List<String>)
 data class ConfirmInboundRequest(val label: String, val locationCode: String)
 data class ShipRequest(val soNumber: String, val label: String, val quantity: Int)
 data class ApiError(val error: String)
@@ -184,7 +190,9 @@ data class OpenSalesOrder(
     val soNumber: String,
     val orderDate: String,
     val status: String,
-    val matchNote: String? = null
+    val matchNote: String? = null,
+    val pickStatus: String? = null,
+    val shipStatus: String? = null
 )
 data class MoveInV2Request(val label: String, val destinationLocationCode: String, val quantity: Int)
 data class SettingsResponse(
@@ -248,8 +256,12 @@ data class OpnameCountHistoryEntry(
     val username: String?,
     val createdAt: String
 )
+data class SkuLocationRow(val locationCode: String, val locationType: String, val quantity: Int)
+data class SkuLocationsResponse(val sku: String, val locations: List<SkuLocationRow>)
 
 interface WmsApi {
+    @GET("api/location-stock/by-sku")
+    suspend fun getLocationsBySku(@Query("sku") sku: String): Response<SkuLocationsResponse>
     @GET("api/stock-opname/{opnameNumber}/report")
     suspend fun getOpnameReport(@Path("opnameNumber") opnameNumber: String): Response<OpnameReportResponse>
     @GET("api/stock-opname/{opnameNumber}/count-history")
@@ -276,6 +288,9 @@ interface WmsApi {
     suspend fun confirmInbound(@Body request: ConfirmInboundRequest): Response<PalletResponse>
     @PATCH("api/pallets/ship")
     suspend fun shipPallet(@Body request: ShipRequest): Response<PalletResponse>
+
+    @GET("api/auth/pda-access")
+    suspend fun getPdaAccess(): Response<PdaAccessResponse>
 
     @POST("api/auth/logout")
     suspend fun logout(): Response<Unit>

@@ -14,10 +14,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavHostController
 import com.kevin.wmsscanner.ScanBus
+import com.kevin.wmsscanner.SessionManager
 import com.kevin.wmsscanner.network.NetworkModule
 import com.kevin.wmsscanner.network.PickRequest
 import com.kevin.wmsscanner.network.PickSummaryLine
 import com.kevin.wmsscanner.ui.components.CameraScanButton
+import com.kevin.wmsscanner.ui.components.picking.InfoBadge
+import com.kevin.wmsscanner.ui.components.picking.RepickConfirmDialog
+import com.kevin.wmsscanner.ui.components.picking.SkuLocationsDialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.kevin.wmsscanner.network.TambahanItemLine
@@ -27,6 +31,10 @@ fun SoPickingListScreen(navController: NavHostController, soNumber: String) {
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var activeLine by remember { mutableStateOf<PickSummaryLine?>(null) }
+    // Line waiting for "pick again?" confirmation (already fully picked)
+    var confirmRepickLine by remember { mutableStateOf<PickSummaryLine?>(null) }
+    // Line whose location list is being shown
+    var infoLine by remember { mutableStateOf<PickSummaryLine?>(null) }
     val scope = rememberCoroutineScope()
     var tambahanItems by remember { mutableStateOf<List<TambahanItemLine>>(emptyList()) }
     var tambahanNumber by remember { mutableStateOf<String?>(null) }
@@ -74,21 +82,30 @@ fun SoPickingListScreen(navController: NavHostController, soNumber: String) {
             Text(error!!, color = MaterialTheme.colorScheme.error)
         } else {
             lines.forEach { line ->
-//                val done = line.remaining <= 0
-                Card(
-                    onClick = {activeLine = line },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                val done = line.pickedQty >= line.orderedQty
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(line.itemSku)
-                            Text("${line.pickedQty}/${line.orderedQty}")
+                    Card(
+                        onClick = {
+                            if (done) confirmRepickLine = line else activeLine = line
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(line.itemSku)
+                                Text("${line.pickedQty}/${line.orderedQty}")
+                            }
+                            Text(line.itemName, style = MaterialTheme.typography.bodySmall)
                         }
-                        Text(line.itemName, style = MaterialTheme.typography.bodySmall)
                     }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    InfoBadge(onClick = { infoLine = line })
                 }
             }
             Spacer(modifier = Modifier.height(24.dp))
@@ -125,11 +142,14 @@ fun SoPickingListScreen(navController: NavHostController, soNumber: String) {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            OutlinedButton(
-                onClick = { navController.navigate("tambahan_picking/$soNumber") },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("+ Tambahan")
+            // Only roles with "Tambahan picking" ticked on Permissions → PDA.
+            if (SessionManager.can("pda.pickTambahan")) {
+                OutlinedButton(
+                    onClick = { navController.navigate("tambahan_picking/$soNumber") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("+ Tambahan")
+                }
             }
 //            lines.forEach { line ->
 //                Card(
@@ -152,6 +172,22 @@ fun SoPickingListScreen(navController: NavHostController, soNumber: String) {
         ) {
             Text("Back")
         }
+    }
+
+    confirmRepickLine?.let { line ->
+        RepickConfirmDialog(
+            soNumber = soNumber,
+            line = line,
+            onConfirm = {
+                confirmRepickLine = null
+                activeLine = line
+            },
+            onDismiss = { confirmRepickLine = null }
+        )
+    }
+
+    infoLine?.let { line ->
+        SkuLocationsDialog(line = line, onDismiss = { infoLine = null })
     }
 
     activeLine?.let { line ->

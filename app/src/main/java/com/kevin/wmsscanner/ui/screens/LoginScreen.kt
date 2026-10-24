@@ -12,6 +12,7 @@ import com.kevin.wmsscanner.SessionManager
 import com.kevin.wmsscanner.network.LoginRequest
 import com.kevin.wmsscanner.network.NetworkModule
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 @Composable
 fun LoginScreen(navController: NavHostController) {
@@ -67,10 +68,22 @@ fun LoginScreen(navController: NavHostController) {
                         loading = false
                         if (response.isSuccessful && response.body() != null) {
                             val body = response.body()!!
-                            SessionManager.setSession(body.id, body.username)
+                            SessionManager.setSession(
+                                body.id,
+                                body.username,
+                                body.pdaPermissions ?: emptyList()
+                            )
                             navController.navigate("update_check") {
                                 popUpTo("login") { inclusive = true }
                             }
+                        } else if (response.code() == 403) {
+                            // Role has no PDA features ticked on /permissions.
+                            val serverMessage = try {
+                                JSONObject(response.errorBody()?.string() ?: "").optString("error")
+                            } catch (e: Exception) {
+                                ""
+                            }
+                            error = serverMessage.ifBlank { "Your role has no PDA access" }
                         } else {
                             error = "Invalid username or password"
                         }

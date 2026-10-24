@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.kevin.wmsscanner.SessionManager
 import com.kevin.wmsscanner.network.NetworkModule
 import com.kevin.wmsscanner.network.SoLookupLine
 import com.kevin.wmsscanner.network.TambahanItemLine
@@ -75,7 +76,7 @@ fun ShipSoItemListScreen(navController: NavHostController, soNumber: String) {
                 }
                 Card(
                     onClick = {
-                        if (!done) {
+                        if (!done && SessionManager.can("pda.ship")) {
                             navController.navigate("ship_session_v2/$soNumber/${line.itemSku}")
                         }
                     },
@@ -111,7 +112,7 @@ fun ShipSoItemListScreen(navController: NavHostController, soNumber: String) {
                     val done = line.shippedQty >= line.pickedQty
                     Card(
                         onClick = {
-                            if (!done) {
+                            if (!done && SessionManager.can("pda.shipTambahan")) {
                                 navController.navigate("tambahan_ship/$soNumber/${line.itemSku}")
                             }
                         },

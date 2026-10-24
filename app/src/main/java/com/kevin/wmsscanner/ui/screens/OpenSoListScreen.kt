@@ -13,14 +13,20 @@ import com.kevin.wmsscanner.network.NetworkModule
 import com.kevin.wmsscanner.network.OpenSalesOrder
 import kotlinx.coroutines.delay
 // Shared by both Picking (by SO) and Shipping — a searchable list of every
-// open SO, sorted IN_PROGRESS first, then PENDING. Tapping one navigates
-// to whatever destination route pattern the caller provides.
+// open SO, sorted IN_PROGRESS first, then PENDING, then DONE. Tapping one
+// navigates to whatever destination route pattern the caller provides.
+// `forPicking` picks which status to show: picked-progress on Picking,
+// shipped-progress on Shipping, so a fully picked SO is only DONE on Picking.
 @Composable
 fun OpenSoListScreen(
     navController: NavHostController,
     title: String,
-    destinationRoutePrefix: String // e.g. "picking_so_list" or "ship_session_v2"
+    destinationRoutePrefix: String, // e.g. "picking_so_list" or "ship_session_v2"
+    forPicking: Boolean = false
 ) {
+    fun statusOf(order: OpenSalesOrder): String =
+        (if (forPicking) order.pickStatus else order.shipStatus) ?: order.status
+
     var search by remember { mutableStateOf("") }
     var orders by remember { mutableStateOf<List<OpenSalesOrder>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -62,7 +68,14 @@ fun OpenSoListScreen(
     // Once the driver types something, switch to the broader search that
     // includes DONE orders too — so a completed SO with a pending Tambahan
     // can still be found and opened.
-    val filtered = searchResults ?: orders.filter { it.soNumber.contains(search.trim(), ignoreCase = true) }
+    val filtered = (searchResults ?: orders.filter { it.soNumber.contains(search.trim(), ignoreCase = true) })
+        .sortedBy {
+            when (statusOf(it)) {
+                "IN_PROGRESS" -> 0
+                "DONE" -> 2
+                else -> 1
+            }
+        } // stable sort — keeps newest-first within each status
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -94,7 +107,7 @@ fun OpenSoListScreen(
             )
         } else {
             filtered.forEach { order ->
-                val (label, color) = when (order.status) {
+                val (label, color) = when (statusOf(order)) {
                     "DONE" -> "DONE" to MaterialTheme.colorScheme.primary
                     "IN_PROGRESS" -> "IN PROGRESS" to MaterialTheme.colorScheme.tertiary
                     else -> "PENDING" to MaterialTheme.colorScheme.error

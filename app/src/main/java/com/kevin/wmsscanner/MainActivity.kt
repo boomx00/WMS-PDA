@@ -66,7 +66,9 @@ fun WmsApp() {
         composable("picking_v2") { PickingV2Screen(navController) }
         composable("shipping_sessions_v2") { ShippingSessionsV2Screen(navController) }
         composable("picking_so_entry") { PickingSoEntryScreen(navController) }
-        composable("stock_opname"){StockOpnameScreen(navController)}
+        composable("stock_opname") { StockOpnameMenuScreen(navController) }
+        composable("stock_opname_location") { StockOpnameScreen(navController) }
+        composable("stock_opname_sku") { StockOpnameSkuScreen(navController) }
         composable(
             "picking_so_list/{soNumber}",
             arguments = listOf(navArgument("soNumber") { type = NavType.StringType })

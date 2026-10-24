@@ -414,6 +414,7 @@ fun OpnameCountDialog(
     // already has data and would create an accidental duplicate instead
     // of correcting the existing line — see duplicateWarningMessage below.
     var duplicateWarningMessage by remember { mutableStateOf<String?>(null) }
+    var successMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     // Live SKU lookup/search — resolves the product name once the typed or
@@ -852,9 +853,13 @@ fun OpnameCountDialog(
                                                 }
                                                 lastCommittedLocation = locationInput.trim()
                                                 lastCommittedSku = scannedInput.trim()
-                                                if (!initial.editing) {
-                                                    scannedInput = ""
-                                                    countedInput = ""
+                                                // Confirm with a pop-up; its OK closes this dialog
+                                                // (so the same location can't be entered twice) and
+                                                // onDismiss refreshes the list behind it.
+                                                successMessage = if (body?.itemSku != null) {
+                                                    "Location: ${body.locationCode}\nSKU: ${body.itemSku}\nQty: $counted"
+                                                } else {
+                                                    "Location: ${body?.locationCode ?: locationInput.trim()}\nMarked as empty"
                                                 }
                                             } else {
                                                 error = "Failed: ${response.errorBody()?.string() ?: "unknown error"}"
@@ -899,6 +904,25 @@ fun OpnameCountDialog(
     // the whole count dialog (not just this alert), since the intended
     // next step is tapping the existing card in the list, not continuing
     // to type in this one.
+    successMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = {
+                successMessage = null
+                onDismiss()
+            },
+            title = { Text("Saved successfully") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = {
+                    successMessage = null
+                    onDismiss()
+                }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
     duplicateWarningMessage?.let { message ->
         AlertDialog(
             onDismissRequest = { duplicateWarningMessage = null },

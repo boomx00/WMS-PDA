@@ -9,6 +9,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.kevin.wmsscanner.SessionManager
 import com.kevin.wmsscanner.ui.components.MenuButton
 
 @Composable
@@ -23,12 +24,17 @@ fun MoveMenuScreen(navController: NavHostController) {
         Text(text = "Move", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(40.dp))
 
-        MenuButton("MOVE FLOOR \u2192 RACK  (v2)") { navController.navigate("move_in_v2") }
-        Spacer(modifier = Modifier.height(12.dp))
-//        MenuButton("MOVE OUT (Rack \u2192 Floor)") { navController.navigate("move_out") }
+        if (SessionManager.can("pda.moveIn")) {
+            MenuButton("MOVE FLOOR → RACK  (v2)") { navController.navigate("move_in_v2") }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+//        MenuButton("MOVE OUT (Rack → Floor)") { navController.navigate("move_out") }
 //        Spacer(modifier = Modifier.height(12.dp))
-        MenuButton("Perpindahan lokasi (v2)") { navController.navigate("move_v2") }
-        Spacer(modifier = Modifier.height(24.dp))
+        if (SessionManager.can("pda.move")) {
+            MenuButton("Perpindahan lokasi (v2)") { navController.navigate("move_v2") }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+        Spacer(modifier = Modifier.height(12.dp))
 
         OutlinedButton(
             onClick = { navController.popBackStack() },
