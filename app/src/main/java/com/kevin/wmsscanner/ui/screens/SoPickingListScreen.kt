@@ -16,6 +16,7 @@ import androidx.navigation.NavHostController
 import com.kevin.wmsscanner.ScanBus
 import com.kevin.wmsscanner.SessionManager
 import com.kevin.wmsscanner.network.NetworkModule
+import com.kevin.wmsscanner.network.isSingleSku
 import com.kevin.wmsscanner.network.PickRequest
 import com.kevin.wmsscanner.network.PickSummaryLine
 import com.kevin.wmsscanner.ui.components.CameraScanButton
@@ -25,8 +26,10 @@ import com.kevin.wmsscanner.ui.components.picking.SkuLocationsDialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.kevin.wmsscanner.network.TambahanItemLine
+// stagingCode = where this session's picks go, chosen once on the
+// "Pick to" screen before this one ("" = the server's default).
 @Composable
-fun SoPickingListScreen(navController: NavHostController, soNumber: String) {
+fun SoPickingListScreen(navController: NavHostController, soNumber: String, stagingCode: String = "") {
     var lines by remember { mutableStateOf<List<PickSummaryLine>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -74,6 +77,21 @@ fun SoPickingListScreen(navController: NavHostController, soNumber: String) {
             .padding(24.dp)
     ) {
         Text("SO: $soNumber", style = MaterialTheme.typography.headlineMedium)
+        if (stagingCode.isNotBlank()) {
+            // Where this SO's picks go (remembered for the SO); Edit picks
+            // another staging location.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Pick to: $stagingCode",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                TextButton(onClick = { navController.navigate("picking_to/$soNumber?edit=true") }) {
+                    Text("Edit")
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(16.dp))
 
         if (loading) {
@@ -145,7 +163,7 @@ fun SoPickingListScreen(navController: NavHostController, soNumber: String) {
             // Only roles with "Tambahan picking" ticked on Permissions → PDA.
             if (SessionManager.can("pda.pickTambahan")) {
                 OutlinedButton(
-                    onClick = { navController.navigate("tambahan_picking/$soNumber") },
+                    onClick = { navController.navigate("tambahan_picking/$soNumber?staging=${android.net.Uri.encode(stagingCode)}") },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("+ Tambahan")
@@ -194,6 +212,7 @@ fun SoPickingListScreen(navController: NavHostController, soNumber: String) {
         PickPopup(
             soNumber = soNumber,
             line = line,
+            stagingCode = stagingCode,
             onDismiss = { activeLine = null },
             onSuccess = {
                 activeLine = null
@@ -208,7 +227,8 @@ fun PickPopup(
     soNumber: String,
     line: PickSummaryLine,
     onDismiss: () -> Unit,
-    onSuccess: () -> Unit
+    onSuccess: () -> Unit,
+    stagingCode: String = ""
 ) {
     var locationInput by remember { mutableStateOf("") }
     var locationChecked by remember { mutableStateOf(false) }
@@ -245,18 +265,18 @@ fun PickPopup(
             if (response.isSuccessful) {
                 val body = response.body()
                 val stock = body?.stock ?: emptyList()
-                val locationType = body?.locationType
+                val singleSku = body?.isSingleSku() == true
                 val match = stock.find { it.itemSku == line.itemSku }
                 val occupiedByOther = stock.any { it.itemSku != line.itemSku }
 
-                // Only RACK cells are single-SKU — occupied-by-other only
+                // Only single-SKU locations (rack cells) — occupied-by-other only
                 // counts as a genuine mismatch there. Floor and other
                 // multi-SKU locations just fall through to EMPTY (Default
                 // Picking territory) when the target SKU isn't among what's
                 // already there.
                 locationStatus = when {
                     match != null -> "MATCH"
-                    occupiedByOther && locationType == "RACK" -> "MISMATCH"
+                    occupiedByOther && singleSku -> "MISMATCH"
                     else -> "EMPTY"
                 }
                 matchedQty = match?.quantity ?: 0
@@ -300,6 +320,13 @@ fun PickPopup(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
                 )
+                if (stagingCode.isNotBlank()) {
+                    Text(
+                        "Pick to: $stagingCode",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Spacer(modifier = Modifier.height(16.dp))
 
                 OutlinedTextField(
@@ -411,7 +438,8 @@ fun PickPopup(
                                             locationCode = locationInput.trim(),
                                             itemSku = line.itemSku,
                                             quantity = qty,
-                                            soNumber = soNumber
+                                            soNumber = soNumber,
+                                            stagingLocationCode = stagingCode.ifBlank { null }
                                         )
                                     )
                                     submitting = false

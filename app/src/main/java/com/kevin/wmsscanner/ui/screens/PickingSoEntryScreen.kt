@@ -5,5 +5,6 @@ import androidx.navigation.NavHostController
 
 @Composable
 fun PickingSoEntryScreen(navController: NavHostController) {
-    OpenSoListScreen(navController, "Picking (by SO)", "picking_so_list", forPicking = true)
+    // Choose the SO, then where to pick to (PickToScreen), then the list.
+    OpenSoListScreen(navController, "Picking (by SO)", "picking_to", forPicking = true)
 }

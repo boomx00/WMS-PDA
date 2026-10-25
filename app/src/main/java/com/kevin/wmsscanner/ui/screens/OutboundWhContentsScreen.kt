@@ -10,6 +10,10 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.kevin.wmsscanner.network.LocationStockItem
 import com.kevin.wmsscanner.network.NetworkModule
+import com.kevin.wmsscanner.network.initialCode
+import com.kevin.wmsscanner.ui.components.LocationPicker
+import com.kevin.wmsscanner.ui.components.pickerOptions
+import com.kevin.wmsscanner.ui.components.rememberLocationPurposes
 import kotlinx.coroutines.launch
 
 @Composable
@@ -20,15 +24,21 @@ fun OutboundWhContentsScreen(navController: NavHostController) {
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    // Which staging location to look in, starting on the default from
+    // Settings → Locations & Marking.
+    val purposes = rememberLocationPurposes()
+    var stagingCode by remember { mutableStateOf("") }
+
     suspend fun refresh() {
+        if (stagingCode.isBlank()) return
         loading = true
         error = null
         try {
-            val response = NetworkModule.api.lookupLocationStock("OUTBOUND_WH")
+            val response = NetworkModule.api.lookupLocationStock(stagingCode)
             if (response.isSuccessful) {
                 stock = response.body()?.stock ?: emptyList()
             } else {
-                error = "Failed to load Outbound Warehouse contents"
+                error = "Failed to load $stagingCode contents"
             }
         } catch (e: Exception) {
             error = "Couldn't reach server: ${e.message}"
@@ -36,8 +46,24 @@ fun OutboundWhContentsScreen(navController: NavHostController) {
         loading = false
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(purposes.data) {
+        val data = purposes.data ?: return@LaunchedEffect
+        if (stagingCode.isBlank()) stagingCode = data.staging.initialCode()
+        if (stagingCode.isBlank()) {
+            loading = false
+            error = "No staging location is set up — ask an admin to set one on the web Locations page."
+        }
+    }
+
+    LaunchedEffect(stagingCode) {
         refresh()
+    }
+
+    LaunchedEffect(purposes.error) {
+        if (purposes.error != null) {
+            loading = false
+            error = purposes.error
+        }
     }
 
     val filtered = stock.filter {
@@ -59,6 +85,16 @@ fun OutboundWhContentsScreen(navController: NavHostController) {
         )
         Spacer(modifier = Modifier.height(16.dp))
 
+        LocationPicker(
+            label = "Staging location",
+            options = purposes.data?.staging?.pickerOptions() ?: emptyList(),
+            value = stagingCode,
+            onValueChange = { stagingCode = it },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         OutlinedTextField(
             value = search,
             onValueChange = { search = it },
@@ -75,7 +111,7 @@ fun OutboundWhContentsScreen(navController: NavHostController) {
             Text(error!!, color = MaterialTheme.colorScheme.error)
         } else if (filtered.isEmpty()) {
             Text(
-                if (stock.isEmpty()) "Outbound Warehouse is empty." else "No matches.",
+                if (stock.isEmpty()) "$stagingCode is empty." else "No matches.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

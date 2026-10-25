@@ -19,6 +19,7 @@ import com.kevin.wmsscanner.ScanBus
 import com.kevin.wmsscanner.network.AddSkuToOpnameRequest
 import com.kevin.wmsscanner.network.ItemSearchResult
 import com.kevin.wmsscanner.network.NetworkModule
+import com.kevin.wmsscanner.network.isSingleSku
 import com.kevin.wmsscanner.network.OpnameCountRequest
 import com.kevin.wmsscanner.network.SkuOpnameApi
 import com.kevin.wmsscanner.network.SkuOpnameDetail
@@ -784,16 +785,18 @@ fun SkuCountDialog(
     }
 
     // Resolve the location type so FLOOR locations switch to tally mode.
-    var locationType by remember { mutableStateOf<String?>(null) }
+    // Whether the location's type allows only one SKU (null until the
+    // lookup comes back).
+    var singleSku by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(locationInput) {
-        locationType = null
+        singleSku = null
         val loc = locationInput.trim()
         if (loc.isBlank()) return@LaunchedEffect
         delay(350)
         try {
             val response = NetworkModule.api.lookupLocationStock(loc)
             if (response.isSuccessful) {
-                locationType = response.body()?.locationType
+                singleSku = response.body()?.isSingleSku()
             }
         } catch (e: Exception) {
             // Falls back to the normal single-shot Save flow.
@@ -802,7 +805,7 @@ fun SkuCountDialog(
 
     val trimmedLocation = locationInput.trim()
     val upperLocation = trimmedLocation.uppercase()
-    val useTally = locationType != null && locationType != "RACK" && trimmedLocation.isNotBlank()
+    val useTally = singleSku == false && trimmedLocation.isNotBlank()
 
     // Running total for the current location. Re-baselines whenever the
     // location changes, starting from what is already recorded there.

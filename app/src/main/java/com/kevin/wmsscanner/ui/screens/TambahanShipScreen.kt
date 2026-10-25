@@ -17,8 +17,14 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.kevin.wmsscanner.ScanBus
 import com.kevin.wmsscanner.network.NetworkModule
+import com.kevin.wmsscanner.network.ShipStagingLocation
 import com.kevin.wmsscanner.network.TambahanShipRequest
+import com.kevin.wmsscanner.network.initialCode
+import com.kevin.wmsscanner.network.marking
 import com.kevin.wmsscanner.ui.components.CameraScanButton
+import com.kevin.wmsscanner.ui.components.LocationPicker
+import com.kevin.wmsscanner.ui.components.rememberLocationPurposes
+import com.kevin.wmsscanner.ui.components.shipPickerOptions
 import kotlinx.coroutines.launch
 
 @Composable
@@ -33,6 +39,33 @@ fun TambahanShipScreen(navController: NavHostController, soNumber: String, expec
     var showResultDialog by remember { mutableStateOf(false) }
     var resultMessage by remember { mutableStateOf("") }
     var resultIsError by remember { mutableStateOf(false) }
+
+    // Which staging location this ships from: where the Tambahan's stock
+    // of this SKU is marked (picked there), with the amounts.
+    val purposes = rememberLocationPurposes()
+    var shippable by remember { mutableStateOf<List<ShipStagingLocation>>(emptyList()) }
+    var stagingCode by remember { mutableStateOf("") }
+    val markingOn = purposes.data?.marking() ?: true
+
+    suspend fun loadShippable() {
+        try {
+            val response = NetworkModule.api.getShipStaging(soNumber, expectedSku, tambahan = true)
+            if (response.isSuccessful) shippable = response.body()?.locations ?: emptyList()
+        } catch (e: Exception) {
+            // Non-fatal — the list still offers every staging location.
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        loadShippable()
+    }
+
+    LaunchedEffect(purposes.data, shippable) {
+        val data = purposes.data ?: return@LaunchedEffect
+        if (stagingCode.isBlank()) {
+            stagingCode = shippable.firstOrNull()?.code ?: data.staging.initialCode()
+        }
+    }
 
     LaunchedEffect(Unit) {
         labelFocusRequester.requestFocus()
@@ -63,7 +96,19 @@ fun TambahanShipScreen(navController: NavHostController, soNumber: String, expec
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.primary
         )
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        LocationPicker(
+            label = "Ship from",
+            options = shipPickerOptions(shippable, purposes.data?.staging?.locations ?: emptyList(), markingOn, "Tambahan"),
+            value = stagingCode,
+            onValueChange = { stagingCode = it },
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (purposes.error != null) {
+            Text(purposes.error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+        Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(
             value = labelInput,
@@ -105,12 +150,18 @@ fun TambahanShipScreen(navController: NavHostController, soNumber: String, expec
                 scope.launch {
                     try {
                         val response = NetworkModule.api.shipTambahan(
-                            TambahanShipRequest(soNumber = soNumber, label = labelInput.trim(), quantity = qty)
+                            TambahanShipRequest(
+                                soNumber = soNumber,
+                                label = labelInput.trim(),
+                                quantity = qty,
+                                stagingLocationCode = stagingCode.ifBlank { null }
+                            )
                         )
                         submitting = false
                         if (response.isSuccessful) {
-                            resultMessage = "Shipped $qty. Remaining: ${response.body()?.remainingToShip}"
+                            resultMessage = "Shipped $qty from $stagingCode. Remaining: ${response.body()?.remainingToShip}"
                             resultIsError = false
+                            loadShippable()
                         } else {
                             resultMessage = "Failed: ${response.errorBody()?.string() ?: "unknown error"}"
                             resultIsError = true

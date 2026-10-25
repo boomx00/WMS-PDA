@@ -14,6 +14,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.kevin.wmsscanner.ScanBus
+import com.kevin.wmsscanner.network.LocationRoles
 import com.kevin.wmsscanner.network.MoveRequest
 import com.kevin.wmsscanner.network.NetworkModule
 import com.kevin.wmsscanner.ui.components.CameraScanButton
@@ -143,10 +144,17 @@ fun MoveInScreen(navController: NavHostController) {
                 loading = true
                 scope.launch {
                     try {
+                        // Moves out of the Receiving location (the floor)
+                        val receivingCode = LocationRoles.receivingCode()
+                        if (receivingCode == null) {
+                            loading = false
+                            error = LocationRoles.MISSING_RECEIVING
+                            return@launch
+                        }
                         val response = NetworkModule.api.movePallet(
                             MoveRequest(
                                 label = labelInput.trim(),
-                                currentLocationCode = "FLOOR",
+                                currentLocationCode = receivingCode,
                                 newLocationCode = locationInput.trim(),
                                 quantity = quantityInput.toIntOrNull()
                             )

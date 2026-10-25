@@ -50,6 +50,13 @@ fun WmsApp() {
     NavHost(navController = navController, startDestination = "login") {
         composable("login") { LoginScreen(navController) }
         composable("home") { HomeScreen(navController) }
+        // After login (via update_check), and from Home's "Change".
+        composable(
+            "choose_warehouse?change={change}",
+            arguments = listOf(navArgument("change") { type = NavType.BoolType; defaultValue = false })
+        ) { backStackEntry ->
+            ChooseWarehouseScreen(navController, backStackEntry.arguments?.getBoolean("change") ?: false)
+        }
         composable("inbound") { InboundScreen(navController) }
         composable("outbound_menu") { OutboundMenuScreen(navController) }
         composable("picking") { PickingScreen(navController) }
@@ -70,11 +77,26 @@ fun WmsApp() {
         composable("stock_opname_location") { StockOpnameScreen(navController) }
         composable("stock_opname_sku") { StockOpnameSkuScreen(navController) }
         composable(
-            "picking_so_list/{soNumber}",
-            arguments = listOf(navArgument("soNumber") { type = NavType.StringType })
+            "picking_to/{soNumber}?edit={edit}",
+            arguments = listOf(
+                navArgument("soNumber") { type = NavType.StringType },
+                navArgument("edit") { type = NavType.BoolType; defaultValue = false }
+            )
         ) { backStackEntry ->
             val soNumber = backStackEntry.arguments?.getString("soNumber") ?: ""
-            SoPickingListScreen(navController, soNumber)
+            val edit = backStackEntry.arguments?.getBoolean("edit") ?: false
+            PickToScreen(navController, soNumber, edit)
+        }
+        composable(
+            "picking_so_list/{soNumber}?staging={staging}",
+            arguments = listOf(
+                navArgument("soNumber") { type = NavType.StringType },
+                navArgument("staging") { type = NavType.StringType; defaultValue = "" }
+            )
+        ) { backStackEntry ->
+            val soNumber = backStackEntry.arguments?.getString("soNumber") ?: ""
+            val staging = backStackEntry.arguments?.getString("staging") ?: ""
+            SoPickingListScreen(navController, soNumber, staging)
         }
         composable(
             "ship_so_items/{soNumber}",
@@ -107,11 +129,15 @@ fun WmsApp() {
         composable("move_in_v2") { MoveInV2Screen(navController) }
         composable("outbound_wh_contents") { OutboundWhContentsScreen(navController) }
         composable(
-            "tambahan_picking/{soNumber}",
-            arguments = listOf(navArgument("soNumber") { type = NavType.StringType })
+            "tambahan_picking/{soNumber}?staging={staging}",
+            arguments = listOf(
+                navArgument("soNumber") { type = NavType.StringType },
+                navArgument("staging") { type = NavType.StringType; defaultValue = "" }
+            )
         ) { backStackEntry ->
             val soNumber = backStackEntry.arguments?.getString("soNumber") ?: ""
-            TambahanPickingScreen(navController, soNumber)
+            val staging = backStackEntry.arguments?.getString("staging") ?: ""
+            TambahanPickingScreen(navController, soNumber, staging)
         }
         composable(
             "tambahan_ship/{soNumber}/{expectedSku}",

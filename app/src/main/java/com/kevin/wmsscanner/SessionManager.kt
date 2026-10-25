@@ -16,6 +16,25 @@ object SessionManager {
     var pdaPermissions by mutableStateOf<Set<String>>(emptySet())
         private set
 
+    // The warehouse (parent location) this session works in, chosen after
+    // login when there's more than one. Null = the server's default
+    // warehouse (single warehouse, or an older server). Compose state, so
+    // the home screen redraws when it changes.
+    var warehouseId by mutableStateOf<Int?>(null)
+        private set
+    var warehouseName by mutableStateOf<String?>(null)
+        private set
+    // How many warehouses there were at login — "Change" only shows when
+    // there's more than one.
+    var warehouseCount by mutableStateOf(0)
+        private set
+
+    fun setWarehouse(id: Int?, name: String?, count: Int) {
+        warehouseId = id
+        warehouseName = name
+        warehouseCount = count
+    }
+
     fun setSession(id: Int, name: String, permissions: List<String> = emptyList()) {
         userId = id
         username = name
@@ -36,5 +55,8 @@ object SessionManager {
         username = null
         isLoggedIn = false
         pdaPermissions = emptySet()
+        warehouseId = null
+        warehouseName = null
+        warehouseCount = 0
     }
 }

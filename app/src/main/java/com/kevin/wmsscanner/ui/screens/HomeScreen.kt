@@ -6,6 +6,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -59,6 +60,20 @@ fun HomeScreen(navController: NavHostController) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        // The warehouse chosen after login; only when there's more than one.
+        if (SessionManager.warehouseCount > 1) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Warehouse: ${SessionManager.warehouseName ?: "Default"}",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                TextButton(onClick = { navController.navigate("choose_warehouse?change=true") }) {
+                    Text("Change")
+                }
+            }
+        }
         Spacer(modifier = Modifier.height(40.dp))
 
         if (canInbound) {

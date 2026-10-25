@@ -41,13 +41,13 @@ fun UpdateCheckScreen(navController: NavHostController) {
                 if (info != null && info.versionCode > BuildConfig.VERSION_CODE) {
                     updateInfo = info
                 } else {
-                    navController.navigate("home") { popUpTo(0) { inclusive = true } }
+                    navController.navigate("choose_warehouse") { popUpTo(0) { inclusive = true } }
                 }
             } else {
-                navController.navigate("home") { popUpTo(0) { inclusive = true } }
+                navController.navigate("choose_warehouse") { popUpTo(0) { inclusive = true } }
             }
         } catch (e: Exception) {
-            navController.navigate("home") { popUpTo(0) { inclusive = true } }
+            navController.navigate("choose_warehouse") { popUpTo(0) { inclusive = true } }
         }
         checking = false
     }
@@ -169,7 +169,7 @@ fun UpdateCheckScreen(navController: NavHostController) {
             Spacer(modifier = Modifier.height(12.dp))
 
             OutlinedButton(
-                onClick = { navController.navigate("home") { popUpTo(0) { inclusive = true } } },
+                onClick = { navController.navigate("choose_warehouse") { popUpTo(0) { inclusive = true } } },
                 enabled = !downloading,
                 modifier = Modifier.fillMaxWidth()
             ) {

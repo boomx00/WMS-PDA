@@ -18,9 +18,22 @@ import com.kevin.wmsscanner.network.BarcodeItemLookupResponse
 import com.kevin.wmsscanner.network.LocationStockItem
 import com.kevin.wmsscanner.network.MoveV2Request
 import com.kevin.wmsscanner.network.NetworkModule
+import com.kevin.wmsscanner.network.StagingBreakdownResponse
+import com.kevin.wmsscanner.network.marking
 import com.kevin.wmsscanner.ui.components.CameraScanButton
+import com.kevin.wmsscanner.ui.components.rememberLocationPurposes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+// Moving stock out of a staging location (with order marking on), the
+// worker says whose stock it is: unmarked (ecer), or marked for one SO /
+// Tambahan. Marked stock moved to another staging location stays marked
+// for that order; moved anywhere else it's un-picked from the order.
+private sealed class MarkChoice {
+    object Unmarked : MarkChoice()
+    data class So(val number: String) : MarkChoice()
+    data class Tambahan(val number: String) : MarkChoice()
+}
 
 @Composable
 fun MoveV2Screen(navController: NavHostController) {
@@ -46,6 +59,15 @@ fun MoveV2Screen(navController: NavHostController) {
     val barcodeFocusRequester = remember { FocusRequester() }
     val destinationFocusRequester = remember { FocusRequester() }
 
+    val purposes = rememberLocationPurposes()
+    val markingOn = purposes.data?.marking() ?: true
+    var sourceIsStaging by remember { mutableStateOf(false) }
+    var breakdown by remember { mutableStateOf<StagingBreakdownResponse?>(null) }
+    var breakdownError by remember { mutableStateOf<String?>(null) }
+    var markChoice by remember { mutableStateOf<MarkChoice?>(null) }
+    // Only staging stock with marking on needs the marked / unmarked choice.
+    val needsMarkChoice = sourceIsStaging && markingOn && selectedTrackedItem != null
+
     LaunchedEffect(Unit) {
         sourceFocusRequester.requestFocus()
     }
@@ -64,6 +86,7 @@ fun MoveV2Screen(navController: NavHostController) {
 
     LaunchedEffect(sourceInput) {
         sourceLooked = false
+        sourceIsStaging = false
         stockList = emptyList()
         selectedTrackedItem = null
         barcodeInput = ""
@@ -86,6 +109,7 @@ fun MoveV2Screen(navController: NavHostController) {
             if (response.isSuccessful) {
                 val body = response.body()
                 stockList = body?.stock ?: emptyList()
+                sourceIsStaging = body?.isStaging == true
                 if (stockList.size == 1) selectedTrackedItem = stockList[0]
                 if (stockList.isEmpty()) barcodeFocusRequester.requestFocus()
             } else {
@@ -95,6 +119,25 @@ fun MoveV2Screen(navController: NavHostController) {
             loadingLookup = false
             sourceLooked = true
             error = "Couldn't reach server: ${e.message}"
+        }
+    }
+
+    // What's marked for which order of this SKU here (staging only).
+    LaunchedEffect(selectedTrackedItem, sourceIsStaging, markingOn) {
+        breakdown = null
+        breakdownError = null
+        markChoice = null
+        val item = selectedTrackedItem ?: return@LaunchedEffect
+        if (!sourceIsStaging || !markingOn) return@LaunchedEffect
+        try {
+            val response = NetworkModule.api.getStagingBreakdown(item.itemSku, sourceInput.trim())
+            if (response.isSuccessful) {
+                breakdown = response.body()
+            } else {
+                breakdownError = "Couldn't load marked stock (${response.code()})"
+            }
+        } catch (e: Exception) {
+            breakdownError = "Couldn't reach server: ${e.message}"
         }
     }
 
@@ -122,6 +165,9 @@ fun MoveV2Screen(navController: NavHostController) {
         stockList = emptyList()
         selectedTrackedItem = null
         sourceLooked = false
+        sourceIsStaging = false
+        breakdown = null
+        markChoice = null
         barcodeInput = ""
         barcodeItem = null
         barcodeError = null
@@ -247,6 +293,49 @@ fun MoveV2Screen(navController: NavHostController) {
             }
         }
 
+        if (needsMarkChoice) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Stok ini milik siapa?", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Marked stock moved to another staging location stays marked; moved anywhere else it is un-picked from that order.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            val bd = breakdown
+            if (breakdownError != null) {
+                Text(breakdownError!!, color = MaterialTheme.colorScheme.error)
+            } else if (bd == null) {
+                Text("Checking...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                MarkOptionRow(
+                    title = "Ecer (unmarked)",
+                    detail = "${bd.unmarked} available",
+                    selected = markChoice == MarkChoice.Unmarked,
+                    enabled = bd.unmarked > 0,
+                    onClick = { markChoice = MarkChoice.Unmarked }
+                )
+                bd.markedBySo.orEmpty().filter { it.quantity > 0 }.forEach { row ->
+                    MarkOptionRow(
+                        title = "SO ${row.soNumber}",
+                        detail = "${row.quantity} marked" + pickedFromText(row.pickedFrom),
+                        selected = markChoice == MarkChoice.So(row.soNumber),
+                        enabled = true,
+                        onClick = { markChoice = MarkChoice.So(row.soNumber) }
+                    )
+                }
+                bd.markedByTambahan.orEmpty().filter { it.quantity > 0 }.forEach { row ->
+                    MarkOptionRow(
+                        title = "Tambahan ${row.tambahanNumber}",
+                        detail = "${row.quantity} marked" + pickedFromText(row.pickedFrom),
+                        selected = markChoice == MarkChoice.Tambahan(row.tambahanNumber),
+                        enabled = true,
+                        onClick = { markChoice = MarkChoice.Tambahan(row.tambahanNumber) }
+                    )
+                }
+            }
+        }
+
         if (activeItemSku != null) {
             Spacer(modifier = Modifier.height(16.dp))
             OutlinedTextField(
@@ -334,12 +423,19 @@ fun MoveV2Screen(navController: NavHostController) {
                                     destinationLocationCode = destinationInput.trim(),
                                     itemSku = activeItemSku,
                                     quantity = qty,
-                                    sourceUntracked = if (isDefaultMove) true else null
+                                    sourceUntracked = if (isDefaultMove) true else null,
+                                    markedSoNumber = (markChoice as? MarkChoice.So)?.number,
+                                    markedTambahanNumber = (markChoice as? MarkChoice.Tambahan)?.number
                                 )
                             )
                             submitting = false
                             if (response.isSuccessful) {
-                                success = "Moved $qty units of $activeItemSku"
+                                val forOrder = when (val c = markChoice) {
+                                    is MarkChoice.So -> " (SO ${c.number})"
+                                    is MarkChoice.Tambahan -> " (Tambahan ${c.number})"
+                                    else -> ""
+                                }
+                                success = "Moved $qty units of $activeItemSku$forOrder"
                                 resetForm()
                                 sourceFocusRequester.requestFocus()
                             } else {
@@ -351,7 +447,7 @@ fun MoveV2Screen(navController: NavHostController) {
                         }
                     }
                 },
-                enabled = !submitting && resolvedQty != null,
+                enabled = !submitting && resolvedQty != null && (!needsMarkChoice || markChoice != null),
                 modifier = Modifier.fillMaxWidth().height(56.dp)
             ) {
                 Text(if (submitting) "Moving..." else "Confirm Move")
@@ -374,6 +470,31 @@ fun MoveV2Screen(navController: NavHostController) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Back")
+        }
+    }
+}
+private fun pickedFromText(pickedFrom: List<String>?): String =
+    if (pickedFrom.isNullOrEmpty()) "" else " \u00B7 dari ${pickedFrom.joinToString(", ")}"
+
+// One choice in "whose stock is this?" when moving out of staging.
+@Composable
+private fun MarkOptionRow(title: String, detail: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        enabled = enabled,
+        colors = if (selected) {
+            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        } else {
+            CardDefaults.cardColors()
+        },
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(if (selected) "\u2713 $title" else title)
+            Text(detail, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

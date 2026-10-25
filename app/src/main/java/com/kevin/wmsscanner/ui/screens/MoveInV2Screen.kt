@@ -19,7 +19,11 @@ import com.kevin.wmsscanner.ScanBus
 import com.kevin.wmsscanner.network.BarcodeItemLookupResponse
 import com.kevin.wmsscanner.network.MoveInV2Request
 import com.kevin.wmsscanner.network.NetworkModule
+import com.kevin.wmsscanner.network.initialCode
 import com.kevin.wmsscanner.ui.components.CameraScanButton
+import com.kevin.wmsscanner.ui.components.LocationPicker
+import com.kevin.wmsscanner.ui.components.pickerOptions
+import com.kevin.wmsscanner.ui.components.rememberLocationPurposes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -50,6 +54,16 @@ fun MoveInV2Screen(navController: NavHostController) {
     val labelFocusRequester = remember { FocusRequester() }
     val destinationFocusRequester = remember { FocusRequester() }
     val palletFocusRequester = remember { FocusRequester() }
+
+    // Where the stock comes from: a receiving location — picked from the
+    // list or typed — starting on the default from Settings → Locations &
+    // Marking.
+    val purposes = rememberLocationPurposes()
+    var receivingCode by remember { mutableStateOf("") }
+    LaunchedEffect(purposes.data) {
+        val data = purposes.data ?: return@LaunchedEffect
+        if (receivingCode.isBlank()) receivingCode = data.receiving.initialCode()
+    }
 
     LaunchedEffect(Unit) {
         labelFocusRequester.requestFocus()
@@ -100,11 +114,28 @@ fun MoveInV2Screen(navController: NavHostController) {
     ) {
         Text("Move In (v2)", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Floor \u2192 destination \u2014 by SKU total",
+            "${receivingCode.ifBlank { "Receiving" }} \u2192 destination \u2014 by SKU total",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        LocationPicker(
+            label = "Take from",
+            options = purposes.data?.receiving?.pickerOptions() ?: emptyList(),
+            value = receivingCode,
+            onValueChange = {
+                receivingCode = it
+                resultDialog = null
+            },
+            allowTyping = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (purposes.error != null) {
+            Text(purposes.error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(
             value = labelInput,
@@ -198,13 +229,14 @@ fun MoveInV2Screen(navController: NavHostController) {
                             MoveInV2Request(
                                 label = labelInput.trim(),
                                 destinationLocationCode = destinationInput.trim(),
-                                quantity = qty
+                                quantity = qty,
+                                receivingLocationCode = receivingCode.trim().ifBlank { null }
                             )
                         )
                         loading = false
                         if (response.isSuccessful) {
                             resultDialog = MoveInResult.Success(
-                                "Moved $qty cartons ($count pallet(s)) to ${destinationInput.trim()}"
+                                "Moved $qty cartons ($count pallet(s)) from ${receivingCode.trim()} to ${destinationInput.trim()}"
                             )
                             // Fields are cleared only when the user dismisses
                             // the dialog (see below) — clearing labelInput

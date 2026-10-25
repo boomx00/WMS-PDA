@@ -17,6 +17,7 @@ import com.kevin.wmsscanner.ScanBus
 import com.kevin.wmsscanner.network.BarcodeItemLookupResponse
 import com.kevin.wmsscanner.network.LocationStockItem
 import com.kevin.wmsscanner.network.NetworkModule
+import com.kevin.wmsscanner.network.isMultiSkuPickArea
 import com.kevin.wmsscanner.network.TambahanPickRequest
 import com.kevin.wmsscanner.ui.components.CameraScanButton
 import kotlinx.coroutines.delay
@@ -25,16 +26,20 @@ import kotlinx.coroutines.launch
 
 
 @Composable
-fun TambahanPickingScreen(navController: NavHostController, soNumber: String) {
+// stagingCode = where the picks go, chosen on the "Pick to" screen for this
+// SO ("" = the server's default).
+fun TambahanPickingScreen(navController: NavHostController, soNumber: String, stagingCode: String = "") {
     var locationInput by remember { mutableStateOf("") }
-    var locationType by remember { mutableStateOf<String?>(null) }
+    // Floor-like location: pickable and holds many SKUs (from its type's
+    // rules on the web Locations page).
+    var multiSkuArea by remember { mutableStateOf(false) }
     var stockList by remember { mutableStateOf<List<LocationStockItem>>(emptyList()) }
     var selectedTrackedItem by remember { mutableStateOf<LocationStockItem?>(null) }
     var locationLooked by remember { mutableStateOf(false) }
     var showResultDialog by remember { mutableStateOf(false) }
     var resultMessage by remember { mutableStateOf("") }
     var resultIsError by remember { mutableStateOf(false) }
-    // Used only when locationType == "FLOOR" — manual SKU entry instead of
+    // Used only when multiSkuArea — manual SKU entry instead of
     // a tappable list, since Floor can hold many different SKUs at once.
     var skuInput by remember { mutableStateOf("") }
 
@@ -62,7 +67,7 @@ fun TambahanPickingScreen(navController: NavHostController, soNumber: String) {
         ScanBus.scans.collect { code ->
             if (!locationLooked) {
                 locationInput = code
-            } else if (locationType == "FLOOR" && selectedTrackedItem == null && barcodeItem == null) {
+            } else if (multiSkuArea && selectedTrackedItem == null && barcodeItem == null) {
                 skuInput = code
             } else if (stockList.isEmpty() && barcodeItem == null) {
                 barcodeInput = code
@@ -74,7 +79,7 @@ fun TambahanPickingScreen(navController: NavHostController, soNumber: String) {
         locationLooked = false
         stockList = emptyList()
         selectedTrackedItem = null
-        locationType = null
+        multiSkuArea = false
         skuInput = ""
         barcodeInput = ""
         barcodeItem = null
@@ -95,15 +100,15 @@ fun TambahanPickingScreen(navController: NavHostController, soNumber: String) {
             if (response.isSuccessful) {
                 val body = response.body()
                 stockList = body?.stock ?: emptyList()
-                locationType = body?.locationType
+                multiSkuArea = body?.isMultiSkuPickArea() == true
 
-                if (locationType != "FLOOR" && stockList.size == 1) {
+                if (!multiSkuArea && stockList.size == 1) {
                     selectedTrackedItem = stockList[0]
                 }
 
                 if (stockList.isEmpty()) {
                     barcodeFocusRequester.requestFocus()
-                } else if (locationType == "FLOOR") {
+                } else if (multiSkuArea) {
                     skuFocusRequester.requestFocus()
                 }
             } else {
@@ -120,7 +125,7 @@ fun TambahanPickingScreen(navController: NavHostController, soNumber: String) {
     // list first; if it's not tracked here yet, fall back to a general
     // item lookup so Default Picking can still tag the right product.
     LaunchedEffect(skuInput) {
-        if (locationType != "FLOOR") return@LaunchedEffect
+        if (!multiSkuArea) return@LaunchedEffect
         selectedTrackedItem = null
         barcodeItem = null
         barcodeError = null
@@ -169,7 +174,7 @@ fun TambahanPickingScreen(navController: NavHostController, soNumber: String) {
         stockList = emptyList()
         selectedTrackedItem = null
         locationLooked = false
-        locationType = null
+        multiSkuArea = false
         skuInput = ""
         barcodeInput = ""
         barcodeItem = null
@@ -205,6 +210,13 @@ fun TambahanPickingScreen(navController: NavHostController, soNumber: String) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        if (stagingCode.isNotBlank()) {
+            Text(
+                "Pick to: $stagingCode",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
         Text(
             "Scan or type location",
             style = MaterialTheme.typography.bodySmall,
@@ -233,7 +245,7 @@ fun TambahanPickingScreen(navController: NavHostController, soNumber: String) {
         }
 
         if (locationLooked) {
-            if (locationType == "FLOOR" && stockList.isNotEmpty()) {
+            if (multiSkuArea && stockList.isNotEmpty()) {
                 // Floor holds many SKUs — typing/scanning is faster and less
                 // error-prone than scrolling a long tappable list.
                 OutlinedTextField(
@@ -358,7 +370,8 @@ fun TambahanPickingScreen(navController: NavHostController, soNumber: String) {
                                     locationCode = locationInput.trim(),
                                     itemSku = sku,
                                     quantity = qty,
-                                    soNumber = soNumber
+                                    soNumber = soNumber,
+                                    stagingLocationCode = stagingCode.ifBlank { null }
                                 )
                             )
                             submitting = false

@@ -16,6 +16,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.kevin.wmsscanner.ScanBus
+import com.kevin.wmsscanner.network.LocationRoles
 import com.kevin.wmsscanner.network.NetworkModule
 import com.kevin.wmsscanner.network.ShipRequest
 import com.kevin.wmsscanner.ui.components.CameraScanButton
@@ -58,11 +59,16 @@ fun ShipSessionScreen(navController: NavHostController, soNumber: String) {
         delay(400)
         lookupLoading = true
         try {
-            val response = NetworkModule.api.lookupPalletAtLocation(labelInput.trim(), "OUTBOUND_WH")
-            lookupResult = if (response.isSuccessful) {
-                "Qty tersedia: ${response.body()?.quantity}"
+            val outboundCode = LocationRoles.outboundCode()
+            lookupResult = if (outboundCode == null) {
+                LocationRoles.MISSING_OUTBOUND
             } else {
-                "Barang tidak ditemukan"
+                val response = NetworkModule.api.lookupPalletAtLocation(labelInput.trim(), outboundCode)
+                if (response.isSuccessful) {
+                    "Qty tersedia: ${response.body()?.quantity}"
+                } else {
+                    "Barang tidak ditemukan"
+                }
             }
         } catch (e: Exception) {
             lookupResult = null

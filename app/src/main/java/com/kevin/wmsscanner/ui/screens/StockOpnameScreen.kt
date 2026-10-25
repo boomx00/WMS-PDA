@@ -17,6 +17,7 @@ import androidx.navigation.NavHostController
 import com.kevin.wmsscanner.ScanBus
 import com.kevin.wmsscanner.network.CreateCustomOpnameRequest
 import com.kevin.wmsscanner.network.NetworkModule
+import com.kevin.wmsscanner.network.isSingleSku
 import com.kevin.wmsscanner.network.OpnameCountRequest
 import com.kevin.wmsscanner.network.OpnameLocationRow
 import com.kevin.wmsscanner.network.OpnameSession
@@ -457,26 +458,28 @@ fun OpnameCountDialog(
     // quantity UI switches from "type the total once" to "type an amount,
     // then tap + or − to add/remove it from a running total", and each tap
     // saves immediately.
-    var locationType by remember { mutableStateOf<String?>(null) }
+    // Whether the scanned location's type allows only one SKU (null until
+    // the lookup comes back).
+    var singleSku by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(locationInput) {
-        locationType = null
+        singleSku = null
         val loc = locationInput.trim()
         if (loc.isBlank()) return@LaunchedEffect
         delay(350)
         try {
             val response = NetworkModule.api.lookupLocationStock(loc)
             if (response.isSuccessful) {
-                locationType = response.body()?.locationType
+                singleSku = response.body()?.isSingleSku()
             }
         } catch (e: Exception) {
-            // Leave locationType null — falls back to the normal single-shot
+            // Leave singleSku null — falls back to the normal single-shot
             // Save flow rather than blocking on a lookup failure.
         }
     }
 
     val trimmedLocation = locationInput.trim()
     val trimmedSku = scannedInput.trim()
-    val useFloorTally = locationType != null && locationType != "RACK" && trimmedSku.isNotBlank()
+    val useFloorTally = singleSku == false && trimmedSku.isNotBlank()
 
     // Running total for the location+SKU currently in the fields.
     // Re-baselines to 0 whenever EITHER the location or the SKU changes —
@@ -559,10 +562,10 @@ fun OpnameCountDialog(
     // one that's ALREADY recorded — a genuinely different SKU is a normal
     // additional item, not a duplicate.
     val duplicateCheckTriggered: Boolean = run {
-        if (initial.editing || locationType == null) return@run false
+        if (initial.editing || singleSku == null) return@run false
         val existingHere = existingItemsByLocation[trimmedLocation.uppercase()] ?: emptyList()
         if (existingHere.isEmpty()) return@run false
-        if (locationType == "RACK") return@run true
+        if (singleSku == true) return@run true
         existingHere.any { it.itemSku != null && it.itemSku.equals(trimmedSku, ignoreCase = true) }
     }
 

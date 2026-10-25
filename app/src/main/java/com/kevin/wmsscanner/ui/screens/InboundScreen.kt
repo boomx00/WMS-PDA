@@ -18,7 +18,11 @@ import androidx.navigation.NavHostController
 import com.kevin.wmsscanner.ScanBus
 import com.kevin.wmsscanner.network.InboundRequest
 import com.kevin.wmsscanner.network.NetworkModule
+import com.kevin.wmsscanner.network.initialCode
 import com.kevin.wmsscanner.ui.components.CameraScanButton
+import com.kevin.wmsscanner.ui.components.LocationPicker
+import com.kevin.wmsscanner.ui.components.pickerOptions
+import com.kevin.wmsscanner.ui.components.rememberLocationPurposes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -54,6 +58,15 @@ fun InboundScreen(navController: NavHostController) {
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
     val labelFocusRequester = remember { FocusRequester() }
+
+    // Where the pallet lands: a receiving location, starting on the default
+    // from Settings → Locations & Marking.
+    val purposes = rememberLocationPurposes()
+    var receivingCode by remember { mutableStateOf("") }
+    LaunchedEffect(purposes.data) {
+        val data = purposes.data ?: return@LaunchedEffect
+        if (receivingCode.isBlank()) receivingCode = data.receiving.initialCode()
+    }
 
     LaunchedEffect(Unit) {
         labelFocusRequester.requestFocus()
@@ -114,7 +127,20 @@ fun InboundScreen(navController: NavHostController) {
             .padding(24.dp)
     ) {
         Text("Inbound", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        LocationPicker(
+            label = "Inbound to",
+            options = purposes.data?.receiving?.pickerOptions() ?: emptyList(),
+            value = receivingCode,
+            onValueChange = { receivingCode = it },
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (purposes.error != null) {
+            Text(purposes.error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(
             value = labelInput,
@@ -215,12 +241,13 @@ fun InboundScreen(navController: NavHostController) {
                                 label = labelInput.trim(),
                                 sku = skuInput.trim(),
                                 workOrderNumber = workOrderInput.trim(),
-                                quantity = qty
+                                quantity = qty,
+                                receivingLocationCode = receivingCode.ifBlank { null }
                             )
                         )
                         loading = false
                         if (response.isSuccessful) {
-                            success = "Pallet ${labelInput.trim()} scanned in at Floor."
+                            success = "Pallet ${labelInput.trim()} scanned in at ${receivingCode.ifBlank { "the receiving location" }}."
                             labelInput = ""
                             skuInput = ""
                             workOrderInput = ""
@@ -245,7 +272,7 @@ fun InboundScreen(navController: NavHostController) {
                     !quantityExceedsMax,
             modifier = Modifier.fillMaxWidth().height(56.dp)
         ) {
-            Text(if (loading) "Scanning in..." else "Scan in at Floor")
+            Text(if (loading) "Scanning in..." else "Scan in at ${receivingCode.ifBlank { "receiving" }}")
         }
 
         Spacer(modifier = Modifier.height(12.dp))

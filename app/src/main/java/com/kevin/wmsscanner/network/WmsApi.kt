@@ -4,6 +4,7 @@ import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.http.PATCH
+import retrofit2.http.PUT
 import retrofit2.http.GET
 import retrofit2.http.Query
 import retrofit2.http.Path
@@ -45,13 +46,34 @@ data class OpnameCountResponse(
     val difference: Int? = null,
     val locationCode: String? = null
 )
-data class LocationStockLookupResponse(val locationCode: String, val locationType: String, val stock: List<LocationStockItem>)
+// The type rules and receiving/staging flags are null from servers older
+// than dynamic location types — see isSingleSku() / isMultiSkuPickArea() in
+// LocationRoles.kt, which fall back to locationType then.
+data class LocationStockLookupResponse(
+    val locationCode: String,
+    val locationType: String,
+    val stock: List<LocationStockItem>,
+    val typeName: String? = null,
+    val allowsMultipleSku: Boolean? = null,
+    val hasPosition: Boolean? = null,
+    val pickable: Boolean? = null,
+    val isReceiving: Boolean? = null,
+    val isStaging: Boolean? = null
+)
 data class PickResponse(val locationCode: String, val itemSku: String, val quantityPicked: Int)
-data class ShipV2Request(val soNumber: String, val label: String, val quantity: Int)
+// stagingLocationCode / receivingLocationCode on these requests: the
+// location chosen on the PDA. Left null, the server uses its default
+// (Settings → Locations & Marking).
+data class ShipV2Request(
+    val soNumber: String,
+    val label: String,
+    val quantity: Int,
+    val stagingLocationCode: String? = null
+)
 data class ShipV2Response(val itemSku: String, val quantityShipped: Int, val remainingOnOrder: Int)
 data class BarcodeItemLookupResponse(val sku: String, val name: String, val palletCartonQty: Int)
 data class ItemSearchResult(val sku: String, val name: String, val palletCartonQty: Int)
-data class ClaimRequest(val itemSku: String, val quantity: Int)
+data class ClaimRequest(val itemSku: String, val quantity: Int, val stagingLocationCode: String? = null)
 
 data class LabelStockLookupResponse(
     val itemSku: String,
@@ -79,7 +101,8 @@ data class TambahanPickRequest(
     val locationCode: String,
     val itemSku: String,
     val quantity: Int,
-    val soNumber: String
+    val soNumber: String,
+    val stagingLocationCode: String? = null
 )
 data class TambahanPickResponse(
     val locationCode: String,
@@ -90,7 +113,8 @@ data class TambahanPickResponse(
 data class TambahanShipRequest(
     val soNumber: String,
     val label: String,
-    val quantity: Int
+    val quantity: Int,
+    val stagingLocationCode: String? = null
 )
 data class TambahanShipResponse(
     val itemSku: String,
@@ -132,14 +156,16 @@ data class InboundRequest(
     val label: String,
     val sku: String,
     val workOrderNumber: String,
-    val quantity: Int
+    val quantity: Int,
+    val receivingLocationCode: String? = null
 )
 data class PickRequest(
     val locationCode: String,
     val itemSku: String,
     val quantity: Int,
     val sourceUntracked: Boolean? = null,
-    val soNumber: String? = null
+    val soNumber: String? = null,
+    val stagingLocationCode: String? = null
 )
 data class PalletResponse(
     val id: Int,
@@ -184,7 +210,11 @@ data class MoveV2Request(
     val destinationLocationCode: String,
     val itemSku: String,
     val quantity: Int,
-    val sourceUntracked: Boolean? = null
+    val sourceUntracked: Boolean? = null,
+    // Moving out of a staging location: which order's marked stock this
+    // is (at most one of the two); both null = unmarked (ecer) stock.
+    val markedSoNumber: String? = null,
+    val markedTambahanNumber: String? = null
 )
 data class OpenSalesOrder(
     val soNumber: String,
@@ -194,7 +224,12 @@ data class OpenSalesOrder(
     val pickStatus: String? = null,
     val shipStatus: String? = null
 )
-data class MoveInV2Request(val label: String, val destinationLocationCode: String, val quantity: Int)
+data class MoveInV2Request(
+    val label: String,
+    val destinationLocationCode: String,
+    val quantity: Int,
+    val receivingLocationCode: String? = null
+)
 data class SettingsResponse(
     val allowDefaultCodeTransactions: Boolean,
     val automaticInbound: Boolean,
@@ -255,6 +290,22 @@ data class OpnameCountHistoryEntry(
     val resultingTotal: Int,
     val username: String?,
     val createdAt: String
+)
+// The staging location an SO's picks go to, remembered on the server.
+data class PickToResponse(val code: String?)
+data class PickToRequest(val stagingLocationCode: String)
+data class ShipStagingLocation(val code: String, val quantity: Int, val pickedFrom: List<String>? = null)
+data class ShipStagingResponse(val markingEnabled: Boolean? = null, val locations: List<ShipStagingLocation>)
+data class MarkedSoRow(val salesOrderId: Int, val soNumber: String, val quantity: Int, val pickedFrom: List<String>? = null)
+data class MarkedTambahanRow(val tambahanOrderId: Int, val tambahanNumber: String, val quantity: Int, val pickedFrom: List<String>? = null)
+data class StagingBreakdownResponse(
+    val itemSku: String,
+    val itemName: String,
+    val markingEnabled: Boolean? = null,
+    val totalInOutboundWh: Int,
+    val unmarked: Int,
+    val markedBySo: List<MarkedSoRow>? = null,
+    val markedByTambahan: List<MarkedTambahanRow>? = null
 )
 data class SkuLocationRow(val locationCode: String, val locationType: String, val quantity: Int)
 data class SkuLocationsResponse(val sku: String, val locations: List<SkuLocationRow>)
@@ -323,6 +374,47 @@ interface WmsApi {
     @GET("api/location-stock/lookup")
     suspend fun lookupLocationStock(@Query("locationCode") locationCode: String): Response<LocationStockLookupResponse>
 
+    // The default receiving / staging locations (for the older screens
+    // that don't have a location picker).
+    @GET("api/locations/roles")
+    suspend fun getLocationRoles(): Response<LocationRolesResponse>
+
+    // One warehouse's receiving / staging locations, its picker defaults, and
+    // whether order marking is on. warehouseId null = the default warehouse
+    // (Retrofit leaves the parameter out).
+    @GET("api/locations/purposes")
+    suspend fun getLocationPurposes(@Query("warehouseId") warehouseId: Int? = null): Response<LocationPurposesResponse>
+
+    // Every warehouse (parent location), in display order.
+    @GET("api/warehouses")
+    suspend fun getWarehouses(): Response<List<WarehouseResponse>>
+
+    // The staging location this SO was last picked into (null = not chosen
+    // yet), and saving a new choice.
+    @GET("api/sales-orders/{soNumber}/pick-to")
+    suspend fun getPickTo(@Path("soNumber") soNumber: String): Response<PickToResponse>
+
+    @PUT("api/sales-orders/{soNumber}/pick-to")
+    suspend fun setPickTo(@Path("soNumber") soNumber: String, @Body request: PickToRequest): Response<PickToResponse>
+
+    // Where an SO (or its Tambahan) can ship one SKU from: the staging
+    // locations holding stock marked for it, or — with marking off — every
+    // staging location holding the SKU.
+    @GET("api/sales-orders/{soNumber}/staging")
+    suspend fun getShipStaging(
+        @Path("soNumber") soNumber: String,
+        @Query("sku") sku: String,
+        @Query("tambahan") tambahan: Boolean = false
+    ): Response<ShipStagingResponse>
+
+    // Marked (per SO / Tambahan) and unmarked stock of one SKU in one
+    // staging location — for moving stock out of staging.
+    @GET("api/location-stock/outbound-breakdown")
+    suspend fun getStagingBreakdown(
+        @Query("sku") sku: String,
+        @Query("locationCode") locationCode: String
+    ): Response<StagingBreakdownResponse>
+
     @PATCH("api/location-stock/pick")
     suspend fun pickFromLocation(@Body request: PickRequest): Response<PickResponse>
 
@@ -339,7 +431,8 @@ interface WmsApi {
     @GET("api/location-stock/lookup-by-label")
     suspend fun lookupStockByLabel(
         @Query("label") label: String,
-        @Query("soNumber") soNumber: String
+        @Query("soNumber") soNumber: String,
+        @Query("stagingLocationCode") stagingLocationCode: String? = null
     ): Response<LabelStockLookupResponse>
     @GET("api/sales-orders/pick-summary")
     suspend fun getPickSummary(@Query("soNumber") soNumber: String): Response<PickSummaryResponse>
