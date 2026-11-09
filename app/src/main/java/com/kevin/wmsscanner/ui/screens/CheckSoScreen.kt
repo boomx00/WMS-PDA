@@ -15,6 +15,7 @@ import com.kevin.wmsscanner.network.NetworkModule
 import com.kevin.wmsscanner.network.SoLookupResponse
 import com.kevin.wmsscanner.ui.components.CameraScanButton
 import kotlinx.coroutines.launch
+import com.kevin.wmsscanner.util.SoDisplay
 
 @Composable
 fun CheckSoScreen(navController: NavHostController) {
@@ -76,6 +77,7 @@ fun CheckSoScreen(navController: NavHostController) {
                         loading = false
                         if (response.isSuccessful) {
                             result = response.body()
+                            result?.let { SoDisplay.remember(it.soNumber, it.soDisplay) }
                         } else {
                             error = "Failed: ${response.errorBody()?.string() ?: "unknown error"}"
                         }
@@ -98,7 +100,7 @@ fun CheckSoScreen(navController: NavHostController) {
 
         if (result != null) {
             Spacer(modifier = Modifier.height(24.dp))
-            Text(result!!.soNumber, style = MaterialTheme.typography.titleMedium)
+            Text(result!!.soDisplay ?: result!!.soNumber, style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(12.dp))
 
             result!!.items.forEach { line ->

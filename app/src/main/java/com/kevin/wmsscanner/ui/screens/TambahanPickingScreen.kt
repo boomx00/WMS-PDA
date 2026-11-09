@@ -22,6 +22,7 @@ import com.kevin.wmsscanner.network.TambahanPickRequest
 import com.kevin.wmsscanner.ui.components.CameraScanButton
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.kevin.wmsscanner.util.SoDisplay
 
 
 
@@ -206,7 +207,7 @@ fun TambahanPickingScreen(navController: NavHostController, soNumber: String, st
     ) {
         Text("Tambahan Picking", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "SO: $soNumber",
+            SoDisplay.header(soNumber),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

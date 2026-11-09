@@ -26,6 +26,7 @@ import com.kevin.wmsscanner.ui.components.picking.SkuLocationsDialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.kevin.wmsscanner.network.TambahanItemLine
+import com.kevin.wmsscanner.util.SoDisplay
 // stagingCode = where this session's picks go, chosen once on the
 // "Pick to" screen before this one ("" = the server's default).
 @Composable
@@ -46,6 +47,7 @@ fun SoPickingListScreen(navController: NavHostController, soNumber: String, stag
         try {
             val response = NetworkModule.api.getPickSummary(soNumber)
             if (response.isSuccessful) {
+                SoDisplay.remember(soNumber, response.body()?.soDisplay)
                 lines = response.body()?.items ?: emptyList()
                 try {
                     val tResponse = NetworkModule.api.getTambahan(soNumber)
@@ -76,7 +78,7 @@ fun SoPickingListScreen(navController: NavHostController, soNumber: String, stag
             .verticalScroll(rememberScrollState())
             .padding(24.dp)
     ) {
-        Text("SO: $soNumber", style = MaterialTheme.typography.headlineMedium)
+        Text(SoDisplay.header(soNumber), style = MaterialTheme.typography.headlineMedium)
         if (stagingCode.isNotBlank()) {
             // Where this SO's picks go (remembered for the SO); Edit picks
             // another staging location.

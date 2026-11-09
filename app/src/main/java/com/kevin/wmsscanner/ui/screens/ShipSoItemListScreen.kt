@@ -13,6 +13,7 @@ import com.kevin.wmsscanner.SessionManager
 import com.kevin.wmsscanner.network.NetworkModule
 import com.kevin.wmsscanner.network.SoLookupLine
 import com.kevin.wmsscanner.network.TambahanItemLine
+import com.kevin.wmsscanner.util.SoDisplay
 @Composable
 fun ShipSoItemListScreen(navController: NavHostController, soNumber: String) {
     var lines by remember { mutableStateOf<List<SoLookupLine>>(emptyList()) }
@@ -24,6 +25,7 @@ fun ShipSoItemListScreen(navController: NavHostController, soNumber: String) {
         try {
             val response = NetworkModule.api.lookupSalesOrder(soNumber)
             if (response.isSuccessful) {
+                SoDisplay.remember(soNumber, response.body()?.soDisplay)
                 lines = response.body()?.items ?: emptyList()
                 try {
                     val tResponse = NetworkModule.api.getTambahan(soNumber)
@@ -48,7 +50,7 @@ fun ShipSoItemListScreen(navController: NavHostController, soNumber: String) {
             .verticalScroll(rememberScrollState())
             .padding(24.dp)
     ) {
-        Text("SO: $soNumber", style = MaterialTheme.typography.headlineMedium)
+        Text(SoDisplay.header(soNumber), style = MaterialTheme.typography.headlineMedium)
         Text(
             "Pilih produk untuk dikirim",
             style = MaterialTheme.typography.bodySmall,

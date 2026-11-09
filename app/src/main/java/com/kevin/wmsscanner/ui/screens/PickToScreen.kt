@@ -14,6 +14,7 @@ import com.kevin.wmsscanner.ui.components.LocationPicker
 import com.kevin.wmsscanner.ui.components.pickerOptions
 import com.kevin.wmsscanner.ui.components.rememberLocationPurposes
 import kotlinx.coroutines.launch
+import com.kevin.wmsscanner.util.SoDisplay
 
 // Picking step 2 (after choosing the SO): where this SO's picks go — a
 // staging location. The choice is remembered for the SO on the server, so
@@ -89,7 +90,7 @@ fun PickToScreen(navController: NavHostController, soNumber: String, edit: Boole
             .fillMaxSize()
             .padding(24.dp)
     ) {
-        Text("SO: $soNumber", style = MaterialTheme.typography.headlineMedium)
+        Text(SoDisplay.header(soNumber), style = MaterialTheme.typography.headlineMedium)
         Text(
             "Pilih lokasi staging untuk picking",
             style = MaterialTheme.typography.bodySmall,

@@ -26,6 +26,7 @@ import com.kevin.wmsscanner.ui.components.LocationPicker
 import com.kevin.wmsscanner.ui.components.rememberLocationPurposes
 import com.kevin.wmsscanner.ui.components.shipPickerOptions
 import kotlinx.coroutines.launch
+import com.kevin.wmsscanner.util.SoDisplay
 
 @Composable
 fun TambahanShipScreen(navController: NavHostController, soNumber: String, expectedSku: String) {
@@ -87,7 +88,7 @@ fun TambahanShipScreen(navController: NavHostController, soNumber: String, expec
     ) {
         Text("Ship Tambahan", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "SO: $soNumber",
+            SoDisplay.header(soNumber),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

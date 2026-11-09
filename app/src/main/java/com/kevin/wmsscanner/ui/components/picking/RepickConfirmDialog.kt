@@ -6,6 +6,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import com.kevin.wmsscanner.network.PickSummaryLine
+import com.kevin.wmsscanner.util.SoDisplay
 
 // Shown before opening the pick popup on a line that's already fully picked.
 @Composable
@@ -20,7 +21,7 @@ fun RepickConfirmDialog(
         title = { Text("Konfirmasi") },
         text = {
             Text(
-                "Apakah anda yakin mau picking lagi? ${line.itemName} untuk $soNumber " +
+                "Apakah anda yakin mau picking lagi? ${line.itemName} untuk ${SoDisplay.of(soNumber)} " +
                         "sudah terpicking sebanyak ${line.pickedQty}/${line.orderedQty}"
             )
         },

@@ -5,6 +5,7 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 // Per-SKU stock opname (SOSKU-...). Kept in its own file so WmsApi.kt stays
 // untouched. Counting a location's quantity, finishing, history and item
@@ -63,6 +64,16 @@ interface WmsSkuOpnameApi {
         @Path("opnameNumber") opnameNumber: String,
         @Body request: AddSkuToOpnameRequest
     ): Response<SkuOpnameSkuEntry>
+
+    // Where the SKU sits in the system right now — every location with a
+    // non-zero quantity, pickable or not (all=1). Same rows the server sums
+    // when it locks a SKU's system qty. Reuses SkuLocationsResponse from
+    // WmsApi.kt; picking keeps calling the pickable-only version there.
+    @GET("api/location-stock/by-sku")
+    suspend fun getAllLocationsBySku(
+        @Query("sku") sku: String,
+        @Query("all") all: Int
+    ): Response<SkuLocationsResponse>
 }
 
 object SkuOpnameApi {

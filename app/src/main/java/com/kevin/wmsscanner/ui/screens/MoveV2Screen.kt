@@ -24,6 +24,7 @@ import com.kevin.wmsscanner.ui.components.CameraScanButton
 import com.kevin.wmsscanner.ui.components.rememberLocationPurposes
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.kevin.wmsscanner.util.SoDisplay
 
 // Moving stock out of a staging location (with order marking on), the
 // worker says whose stock it is: unmarked (ecer), or marked for one SO /
@@ -317,7 +318,7 @@ fun MoveV2Screen(navController: NavHostController) {
                 )
                 bd.markedBySo.orEmpty().filter { it.quantity > 0 }.forEach { row ->
                     MarkOptionRow(
-                        title = "SO ${row.soNumber}",
+                        title = row.soDisplay ?: SoDisplay.header(row.soNumber),
                         detail = "${row.quantity} marked" + pickedFromText(row.pickedFrom),
                         selected = markChoice == MarkChoice.So(row.soNumber),
                         enabled = true,

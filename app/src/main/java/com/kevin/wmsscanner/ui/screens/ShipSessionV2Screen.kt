@@ -29,6 +29,7 @@ import com.kevin.wmsscanner.ui.components.shipPickerOptions
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.window.Dialog
+import com.kevin.wmsscanner.util.SoDisplay
 @Composable
 fun ShipSessionV2Screen(navController: NavHostController, soNumber: String, expectedSku: String) {
     var labelInput by remember { mutableStateOf("") }
@@ -150,7 +151,7 @@ fun ShipSessionV2Screen(navController: NavHostController, soNumber: String, expe
     ) {
         Text("Ship (v2)", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "SO: $soNumber",
+            SoDisplay.header(soNumber),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

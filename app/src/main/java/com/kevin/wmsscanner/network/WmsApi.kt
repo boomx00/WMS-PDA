@@ -89,7 +89,10 @@ data class LabelStockLookupResponse(
 data class SessionSummary(
     val soNumber: String,
     val orderDate: String,
-    val status: String
+    val status: String,
+    // "SO - 202608000162" (doc type - doc no); null from older servers
+    val soDisplay: String? = null,
+    val salesOrderTypeName: String? = null
 )
 data class MoveRequest(
     val label: String,
@@ -187,7 +190,10 @@ data class SoLookupLine(
 data class SoLookupResponse(
     val soNumber: String,
     val orderDate: String,
-    val items: List<SoLookupLine>
+    val items: List<SoLookupLine>,
+    // "SO - 202608000162" (doc type - doc no); null from older servers
+    val soDisplay: String? = null,
+    val salesOrderTypeName: String? = null
 )
 
 data class PickSummaryLine(
@@ -202,7 +208,9 @@ data class PickSummaryLine(
 data class SalesOrder(
     val id: Int,
     val soNumber: String,
-    val orderDate: String
+    val orderDate: String,
+    val soDisplay: String? = null,
+    val salesOrderTypeName: String? = null
 )
 
 data class MoveV2Request(
@@ -222,7 +230,10 @@ data class OpenSalesOrder(
     val status: String,
     val matchNote: String? = null,
     val pickStatus: String? = null,
-    val shipStatus: String? = null
+    val shipStatus: String? = null,
+    // "SO - 202608000162" (doc type - doc no); null from older servers
+    val soDisplay: String? = null,
+    val salesOrderTypeName: String? = null
 )
 data class MoveInV2Request(
     val label: String,
@@ -266,7 +277,13 @@ data class OpnameDetailResponse(
 
 data class CountRequest(val locationCode: String, val itemSku: String, val countedQty: Int)
 
-data class PickSummaryResponse(val soNumber: String, val items: List<PickSummaryLine>)
+data class PickSummaryResponse(
+    val soNumber: String,
+    val items: List<PickSummaryLine>,
+    // "SO - 202608000162" (doc type - doc no); null from older servers
+    val soDisplay: String? = null,
+    val salesOrderTypeName: String? = null
+)
 
 data class CreateCustomOpnameRequest(val notes: String? = null)
 data class OpnameReportItem(
@@ -296,7 +313,14 @@ data class PickToResponse(val code: String?)
 data class PickToRequest(val stagingLocationCode: String)
 data class ShipStagingLocation(val code: String, val quantity: Int, val pickedFrom: List<String>? = null)
 data class ShipStagingResponse(val markingEnabled: Boolean? = null, val locations: List<ShipStagingLocation>)
-data class MarkedSoRow(val salesOrderId: Int, val soNumber: String, val quantity: Int, val pickedFrom: List<String>? = null)
+data class MarkedSoRow(
+    val salesOrderId: Int,
+    val soNumber: String,
+    val quantity: Int,
+    val pickedFrom: List<String>? = null,
+    // "SO - 202610000658" (doc type - doc no); null from older servers
+    val soDisplay: String? = null
+)
 data class MarkedTambahanRow(val tambahanOrderId: Int, val tambahanNumber: String, val quantity: Int, val pickedFrom: List<String>? = null)
 data class StagingBreakdownResponse(
     val itemSku: String,

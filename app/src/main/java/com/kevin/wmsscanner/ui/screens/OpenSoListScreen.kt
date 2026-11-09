@@ -12,6 +12,7 @@ import androidx.navigation.NavHostController
 import com.kevin.wmsscanner.network.NetworkModule
 import com.kevin.wmsscanner.network.OpenSalesOrder
 import kotlinx.coroutines.delay
+import com.kevin.wmsscanner.util.SoDisplay
 // Shared by both Picking (by SO) and Shipping — a searchable list of every
 // open SO, sorted IN_PROGRESS first, then PENDING, then DONE. Tapping one
 // navigates to whatever destination route pattern the caller provides.
@@ -38,6 +39,7 @@ fun OpenSoListScreen(
             val response = NetworkModule.api.getOpenSalesOrders()
             if (response.isSuccessful) {
                 orders = response.body() ?: emptyList()
+                orders.forEach { SoDisplay.remember(it.soNumber, it.soDisplay) }
             } else {
                 error = "Failed to load sales orders"
             }
@@ -58,6 +60,7 @@ fun OpenSoListScreen(
             val response = NetworkModule.api.searchAnySalesOrders(query)
             if (response.isSuccessful) {
                 searchResults = response.body() ?: emptyList()
+                searchResults?.forEach { SoDisplay.remember(it.soNumber, it.soDisplay) }
             }
         } catch (e: Exception) {
             // Non-fatal — falls back to whatever's already showing
@@ -68,7 +71,10 @@ fun OpenSoListScreen(
     // Once the driver types something, switch to the broader search that
     // includes DONE orders too — so a completed SO with a pending Tambahan
     // can still be found and opened.
-    val filtered = (searchResults ?: orders.filter { it.soNumber.contains(search.trim(), ignoreCase = true) })
+    val filtered = (searchResults ?: orders.filter {
+        it.soNumber.contains(search.trim(), ignoreCase = true) ||
+            (it.soDisplay?.contains(search.trim(), ignoreCase = true) ?: false)
+    })
         .sortedBy {
             when (statusOf(it)) {
                 "IN_PROGRESS" -> 0
@@ -120,7 +126,7 @@ fun OpenSoListScreen(
                         modifier = Modifier.fillMaxWidth().padding(16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(order.soNumber, style = MaterialTheme.typography.titleMedium)
+                        Text(order.soDisplay ?: order.soNumber, style = MaterialTheme.typography.titleMedium)
                         if (order.matchNote != null) {
                             Text(
                                 order.matchNote,

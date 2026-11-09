@@ -13,6 +13,7 @@ import com.kevin.wmsscanner.network.AssignCheckerRequest
 import com.kevin.wmsscanner.network.NetworkModule
 import com.kevin.wmsscanner.network.SessionSummary
 import kotlinx.coroutines.launch
+import com.kevin.wmsscanner.util.SoDisplay
 
 @Composable
 fun ShippingSessionsScreen(navController: NavHostController) {
@@ -29,6 +30,7 @@ fun ShippingSessionsScreen(navController: NavHostController) {
             val response = NetworkModule.api.getMySessions()
             if (response.isSuccessful) {
                 sessions = response.body() ?: emptyList()
+                sessions.forEach { SoDisplay.remember(it.soNumber, it.soDisplay) }
             }
         } catch (e: Exception) {
         }
@@ -154,7 +156,7 @@ fun SessionRow(session: SessionSummary, onClick: () -> Unit) {
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(session.soNumber, fontWeight = FontWeight.Medium)
+            Text(session.soDisplay ?: session.soNumber, fontWeight = FontWeight.Medium)
             Text(label, color = color, style = MaterialTheme.typography.labelMedium)
         }
     }

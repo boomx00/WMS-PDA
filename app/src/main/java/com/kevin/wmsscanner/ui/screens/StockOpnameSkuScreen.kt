@@ -19,13 +19,14 @@ import com.kevin.wmsscanner.ScanBus
 import com.kevin.wmsscanner.network.AddSkuToOpnameRequest
 import com.kevin.wmsscanner.network.ItemSearchResult
 import com.kevin.wmsscanner.network.NetworkModule
-import com.kevin.wmsscanner.network.isSingleSku
 import com.kevin.wmsscanner.network.OpnameCountRequest
 import com.kevin.wmsscanner.network.SkuOpnameApi
 import com.kevin.wmsscanner.network.SkuOpnameDetail
 import com.kevin.wmsscanner.network.SkuOpnameLine
 import com.kevin.wmsscanner.network.SkuOpnameSession
+import com.kevin.wmsscanner.network.SkuLocationRow
 import com.kevin.wmsscanner.ui.components.CameraScanButton
+import com.kevin.wmsscanner.ui.components.picking.InfoBadge
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -586,6 +587,7 @@ fun SkuLocationsScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var dialogState by remember { mutableStateOf<SkuCountDialogState?>(null) }
     var historyLocation by remember { mutableStateOf<String?>(null) }
+    var showSystemLocations by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     suspend fun refresh(showSpinner: Boolean = true) {
@@ -631,12 +633,22 @@ fun SkuLocationsScreen(
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                Text(skuCode, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    skuName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(skuCode, style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            skuName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    // Where this SKU is in the system right now.
+                    InfoBadge(onClick = { showSystemLocations = true })
+                }
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("System qty (locked)")
@@ -742,6 +754,150 @@ fun SkuLocationsScreen(
             onDismiss = { historyLocation = null }
         )
     }
+
+    if (showSystemLocations) {
+        SkuSystemLocationsDialog(
+            skuCode = skuCode,
+            skuName = skuName,
+            lockedSystemQty = systemQty,
+            countedQtyByLocation = existingQtyByLocation,
+            onDismiss = { showSystemLocations = false }
+        )
+    }
+}
+
+// "i" on the SKU card: every location holding this SKU in the system right
+// now (live location_stock, pickable or not). The locked system qty was
+// taken from these same rows when the SKU was added, so the live total is
+// shown next to it — if they differ, stock moved after the lock. Each row
+// also shows what's been counted there in this session, if anything.
+@Composable
+fun SkuSystemLocationsDialog(
+    skuCode: String,
+    skuName: String,
+    lockedSystemQty: Int,
+    countedQtyByLocation: Map<String, Int>,
+    onDismiss: () -> Unit
+) {
+    var rows by remember { mutableStateOf<List<SkuLocationRow>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(skuCode) {
+        try {
+            val response = SkuOpnameApi.api.getAllLocationsBySku(skuCode, 1)
+            if (response.isSuccessful) {
+                rows = response.body()?.locations ?: emptyList()
+            } else {
+                error = "Gagal memuat lokasi: ${readApiError(response.errorBody()?.string())}"
+            }
+        } catch (e: Exception) {
+            error = "Couldn't reach server: ${e.message}"
+        }
+        loading = false
+    }
+
+    val liveTotal = rows.sumOf { it.quantity }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp)) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("Lokasi di sistem", style = MaterialTheme.typography.titleMedium)
+                Text(skuCode, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    skuName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (!loading && error == null) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("System qty now", style = MaterialTheme.typography.bodySmall)
+                        Text("$liveTotal", fontWeight = FontWeight.Medium)
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("System qty (locked)", style = MaterialTheme.typography.bodySmall)
+                        Text("$lockedSystemQty", fontWeight = FontWeight.Medium)
+                    }
+                    if (liveTotal != lockedSystemQty) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "Stok sudah berubah sejak SKU ini ditambahkan (${signed(liveTotal - lockedSystemQty)}).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            "Location",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            "System / Counted",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    HorizontalDivider()
+                }
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    when {
+                        loading -> CircularProgressIndicator()
+                        error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
+                        rows.isEmpty() -> Text(
+                            "Tidak ada stok di lokasi manapun.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        else -> rows.forEach { row ->
+                            val counted = countedQtyByLocation[row.locationCode.uppercase()]
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(row.locationCode, fontWeight = FontWeight.Medium)
+                                    Text(
+                                        row.locationType,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Text(
+                                    "${row.quantity}",
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (row.quantity < 0) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    " / ${counted ?: "–"}",
+                                    color = when {
+                                        counted == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                                        counted == row.quantity -> MaterialTheme.colorScheme.primary
+                                        else -> MaterialTheme.colorScheme.error
+                                    }
+                                )
+                            }
+                            HorizontalDivider()
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Tutup") }
+                }
+            }
+        }
+    }
 }
 
 // Add or correct one location's quantity for this SKU. The SKU is fixed —
@@ -785,18 +941,16 @@ fun SkuCountDialog(
     }
 
     // Resolve the location type so FLOOR locations switch to tally mode.
-    // Whether the location's type allows only one SKU (null until the
-    // lookup comes back).
-    var singleSku by remember { mutableStateOf<Boolean?>(null) }
+    var locationType by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(locationInput) {
-        singleSku = null
+        locationType = null
         val loc = locationInput.trim()
         if (loc.isBlank()) return@LaunchedEffect
         delay(350)
         try {
             val response = NetworkModule.api.lookupLocationStock(loc)
             if (response.isSuccessful) {
-                singleSku = response.body()?.isSingleSku()
+                locationType = response.body()?.locationType
             }
         } catch (e: Exception) {
             // Falls back to the normal single-shot Save flow.
@@ -805,7 +959,7 @@ fun SkuCountDialog(
 
     val trimmedLocation = locationInput.trim()
     val upperLocation = trimmedLocation.uppercase()
-    val useTally = singleSku == false && trimmedLocation.isNotBlank()
+    val useTally = locationType != null && locationType != "RACK" && trimmedLocation.isNotBlank()
 
     // Running total for the current location. Re-baselines whenever the
     // location changes, starting from what is already recorded there.
