@@ -23,6 +23,8 @@ import com.kevin.wmsscanner.network.OpnameCountRequest
 import com.kevin.wmsscanner.network.SkuOpnameApi
 import com.kevin.wmsscanner.network.SkuOpnameDetail
 import com.kevin.wmsscanner.network.SkuOpnameLine
+import com.kevin.wmsscanner.network.isPacks
+import com.kevin.wmsscanner.network.countsInTotal
 import com.kevin.wmsscanner.network.SkuOpnameSession
 import com.kevin.wmsscanner.network.SkuLocationRow
 import com.kevin.wmsscanner.ui.components.CameraScanButton
@@ -48,6 +50,22 @@ private fun readApiError(raw: String?): String {
 }
 
 private fun signed(value: Int): String = if (value > 0) "+$value" else "$value"
+
+// Cartons plus loose packs as a fraction of a carton (packs ÷ packs per
+// carton) — the same total the web summary shows, e.g. 173 + 7 pk at 10 per
+// carton = 173.7.
+private fun withPacks(cartons: Int, packs: Int, packsPerCarton: Int): Double =
+    if (packs == 0 || packsPerCarton <= 0) cartons.toDouble() else cartons + packs.toDouble() / packsPerCarton
+
+private fun round3(value: Double): java.math.BigDecimal =
+    java.math.BigDecimal(value).setScale(3, java.math.RoundingMode.HALF_UP).stripTrailingZeros()
+
+// Up to 3 decimals, trailing zeros dropped: 173, 173.7, 173.667.
+private fun fmtQty(value: Double): String = round3(value).toPlainString()
+
+private fun signedQty(value: Double): String = if (round3(value).signum() > 0) "+${fmtQty(value)}" else fmtQty(value)
+
+private fun isZero(value: Double): Boolean = round3(value).signum() == 0
 
 // ---------------------------------------------------------------------------
 // 1. Session list
@@ -171,8 +189,11 @@ fun StockOpnameSkuScreen(navController: NavHostController) {
                             Text(s.opnameNumber, fontWeight = FontWeight.Medium)
                             Text(label, color = color, style = MaterialTheme.typography.labelMedium)
                         }
+                        // With loose packs as cartons, like the SKU cards.
+                        val systemShown = s.systemTotal?.let { fmtQty(it) } ?: "${s.systemQty}"
+                        val countedShown = s.countedTotal?.let { fmtQty(it) } ?: "${s.countedQty}"
                         Text(
-                            "${s.skuCount} SKU · System (locked): ${s.systemQty} · Counted: ${s.countedQty}",
+                            "${s.skuCount} SKU · System (locked): $systemShown · Counted: $countedShown",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -249,8 +270,9 @@ fun SkuOpnameSessionScreen(session: SkuOpnameSession, onBack: () -> Unit) {
     }
 
     val skus = detail?.skus ?: emptyList()
-    val totalLocked = skus.sumOf { it.systemQty }
-    val totalCounted = skus.sumOf { it.countedQty }
+    // With loose packs as cartons, like each SKU card.
+    val totalLocked = fmtQty(skus.sumOf { withPacks(it.systemQty, it.systemPacks, it.packsPerCarton) })
+    val totalCounted = fmtQty(skus.sumOf { withPacks(it.countedQty, it.countedPacks, it.packsPerCarton) })
 
     Column(
         modifier = Modifier
@@ -314,11 +336,14 @@ fun SkuOpnameSessionScreen(session: SkuOpnameSession, onBack: () -> Unit) {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
+                            // Totals with loose packs as cartons (decimal).
+                            val skuDiff = withPacks(sku.countedQty, sku.countedPacks, sku.packsPerCarton) -
+                                    withPacks(sku.systemQty, sku.systemPacks, sku.packsPerCarton)
                             Text(sku.skuCode, fontWeight = FontWeight.Medium)
                             Text(
-                                if (sku.difference == 0) "Match" else signed(sku.difference),
+                                if (isZero(skuDiff)) "Match" else signedQty(skuDiff),
                                 style = MaterialTheme.typography.labelMedium,
-                                color = if (sku.difference == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                color = if (isZero(skuDiff)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                             )
                         }
                         Text(
@@ -327,8 +352,13 @@ fun SkuOpnameSessionScreen(session: SkuOpnameSession, onBack: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(4.dp))
+                        // Loose packs, when the SKU has any, follow the cartons.
+                        val packsText = if (sku.systemPacks != 0 || sku.countedPacks != 0)
+                            " · Packs: ${sku.countedPacks} / ${sku.systemPacks} pk" else ""
+                        val systemShown = fmtQty(withPacks(sku.systemQty, sku.systemPacks, sku.packsPerCarton))
+                        val countedShown = fmtQty(withPacks(sku.countedQty, sku.countedPacks, sku.packsPerCarton))
                         Text(
-                            "System (locked): ${sku.systemQty} · Counted: ${sku.countedQty} · ${sku.lines.size} location(s)",
+                            "System (locked): $systemShown · Counted: $countedShown$packsText · ${sku.lines.size} location(s)",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -583,6 +613,10 @@ fun SkuLocationsScreen(
     onBack: () -> Unit
 ) {
     var lines by remember { mutableStateOf<List<SkuOpnameLine>>(emptyList()) }
+    // Loose packs locked with systemQty (packs locations), and the
+    // SKU's packs per carton.
+    var systemPacks by remember { mutableStateOf(0) }
+    var packsPerCarton by remember { mutableStateOf(0) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var dialogState by remember { mutableStateOf<SkuCountDialogState?>(null) }
@@ -597,7 +631,10 @@ fun SkuLocationsScreen(
             val response = SkuOpnameApi.api.getSkuOpnameDetail(opnameNumber)
             val body = response.body()
             if (response.isSuccessful && body != null) {
-                lines = body.skus.firstOrNull { it.skuCode == skuCode }?.lines ?: emptyList()
+                val entry = body.skus.firstOrNull { it.skuCode == skuCode }
+                lines = entry?.lines ?: emptyList()
+                systemPacks = entry?.systemPacks ?: 0
+                packsPerCarton = entry?.packsPerCarton ?: 0
             } else {
                 error = "Failed to load"
             }
@@ -611,8 +648,18 @@ fun SkuLocationsScreen(
         refresh()
     }
 
-    val countedTotal = lines.sumOf { it.countedQty }
-    val difference = countedTotal - systemQty
+    // Cartons and loose packs are totalled apart, Total Stock locations only
+    // (a location not counted in Total Stock is listed but not added up).
+    val totalLines = lines.filter { it.countsInTotal() }
+    val countedTotal = totalLines.filter { !it.isPacks() }.sumOf { it.countedQty }
+    val countedPacks = totalLines.filter { it.isPacks() }.sumOf { it.countedQty }
+    val differencePacks = countedPacks - systemPacks
+    // Totals with loose packs as cartons (decimal), like the web summary.
+    val systemShown = withPacks(systemQty, systemPacks, packsPerCarton)
+    val countedShown = withPacks(countedTotal, countedPacks, packsPerCarton)
+    val difference = countedShown - systemShown
+    // Packs figures show for any SKU with a pack size, or with packs anyway.
+    val showPacks = packsPerCarton > 0 || systemPacks != 0 || countedPacks != 0
     val existingQtyByLocation = lines.associate { it.locationCode.uppercase() to it.countedQty }
 
     Column(
@@ -652,19 +699,47 @@ fun SkuLocationsScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("System qty (locked)")
-                    Text("$systemQty", fontWeight = FontWeight.Medium)
+                    Text(fmtQty(systemShown), fontWeight = FontWeight.Medium)
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Counted so far")
-                    Text("$countedTotal", fontWeight = FontWeight.Medium)
+                    Text(fmtQty(countedShown), fontWeight = FontWeight.Medium)
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Difference")
                     Text(
-                        signed(difference),
+                        signedQty(difference),
                         fontWeight = FontWeight.Medium,
-                        color = if (difference == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        color = if (isZero(difference)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                     )
+                }
+                if (showPacks) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Packs per carton")
+                        Text(
+                            if (packsPerCarton > 0) "$packsPerCarton pk" else "–",
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("System packs (locked)")
+                        Text("$systemPacks pk", fontWeight = FontWeight.Medium)
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Packs counted")
+                        Text("$countedPacks pk", fontWeight = FontWeight.Medium)
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Packs difference")
+                        Text(
+                            "${signed(differencePacks)} pk",
+                            fontWeight = FontWeight.Medium,
+                            color = if (differencePacks == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
         }
@@ -707,8 +782,21 @@ fun SkuLocationsScreen(
                                 },
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(line.locationCode, fontWeight = FontWeight.Medium)
-                            Text("${line.countedQty}", color = MaterialTheme.colorScheme.primary)
+                            Column {
+                                Text(line.locationCode, fontWeight = FontWeight.Medium)
+                                if (!line.countsInTotal()) {
+                                    Text(
+                                        "Not in Total Stock — not added up",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Text(
+                                if (line.isPacks()) "${line.countedQty} pk" else "${line.countedQty}",
+                                color = if (line.countsInTotal()) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         TextButton(
@@ -780,6 +868,7 @@ fun SkuSystemLocationsDialog(
     onDismiss: () -> Unit
 ) {
     var rows by remember { mutableStateOf<List<SkuLocationRow>>(emptyList()) }
+    var packsPerCarton by remember { mutableStateOf<Int?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -788,6 +877,7 @@ fun SkuSystemLocationsDialog(
             val response = SkuOpnameApi.api.getAllLocationsBySku(skuCode, 1)
             if (response.isSuccessful) {
                 rows = response.body()?.locations ?: emptyList()
+                packsPerCarton = response.body()?.packsPerCarton
             } else {
                 error = "Gagal memuat lokasi: ${readApiError(response.errorBody()?.string())}"
             }
@@ -797,7 +887,10 @@ fun SkuSystemLocationsDialog(
         loading = false
     }
 
-    val liveTotal = rows.sumOf { it.quantity }
+    // Total Stock locations only, like the locked qty.
+    val liveTotal = rows.filter { it.inTotalStock != false }.sumOf { it.quantity }
+    // Loose packs now, at packs locations (not part of the carton total).
+    val livePacks = rows.filter { it.inTotalStock != false }.sumOf { it.loosePacks }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp)) {
@@ -819,6 +912,15 @@ fun SkuSystemLocationsDialog(
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("System qty (locked)", style = MaterialTheme.typography.bodySmall)
                         Text("$lockedSystemQty", fontWeight = FontWeight.Medium)
+                    }
+                    if (livePacks != 0 || (packsPerCarton ?: 0) > 0) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Loose packs now", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                "$livePacks pk" + (packsPerCarton?.takeIf { it > 0 }?.let { " · $it pk/ctn" } ?: ""),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
                     if (liveTotal != lockedSystemQty) {
                         Spacer(modifier = Modifier.height(4.dp))
@@ -859,6 +961,10 @@ fun SkuSystemLocationsDialog(
                         )
                         else -> rows.forEach { row ->
                             val counted = countedQtyByLocation[row.locationCode.uppercase()]
+                            // A packs location: its stock is loose packs.
+                            val inPacks = row.quantity == 0 && row.loosePacks != 0
+                            val systemHere = if (inPacks) row.loosePacks else row.quantity
+                            val unit = if (inPacks) " pk" else ""
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -866,22 +972,23 @@ fun SkuSystemLocationsDialog(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(row.locationCode, fontWeight = FontWeight.Medium)
                                     Text(
-                                        row.locationType,
+                                        if (row.inTotalStock == false) "${row.locationType} · not in Total Stock"
+                                        else row.locationType,
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                                 Text(
-                                    "${row.quantity}",
+                                    "$systemHere$unit",
                                     fontWeight = FontWeight.Medium,
-                                    color = if (row.quantity < 0) MaterialTheme.colorScheme.error
+                                    color = if (systemHere < 0) MaterialTheme.colorScheme.error
                                     else MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    " / ${counted ?: "–"}",
+                                    " / ${counted?.let { "$it$unit" } ?: "–"}",
                                     color = when {
                                         counted == null -> MaterialTheme.colorScheme.onSurfaceVariant
-                                        counted == row.quantity -> MaterialTheme.colorScheme.primary
+                                        counted == systemHere -> MaterialTheme.colorScheme.primary
                                         else -> MaterialTheme.colorScheme.error
                                     }
                                 )
@@ -940,10 +1047,13 @@ fun SkuCountDialog(
         }
     }
 
-    // Resolve the location type so FLOOR locations switch to tally mode.
+    // Resolve the location type so FLOOR locations switch to tally mode,
+    // and packs locations (e.g. PACKS) to counting loose packs.
     var locationType by remember { mutableStateOf<String?>(null) }
+    var countsPacks by remember { mutableStateOf(false) }
     LaunchedEffect(locationInput) {
         locationType = null
+        countsPacks = false
         val loc = locationInput.trim()
         if (loc.isBlank()) return@LaunchedEffect
         delay(350)
@@ -951,6 +1061,7 @@ fun SkuCountDialog(
             val response = NetworkModule.api.lookupLocationStock(loc)
             if (response.isSuccessful) {
                 locationType = response.body()?.locationType
+                countsPacks = response.body()?.countsInPacks == true
             }
         } catch (e: Exception) {
             // Falls back to the normal single-shot Save flow.
@@ -1003,7 +1114,8 @@ fun SkuCountDialog(
                         scanned = skuCode,
                         countedQty = qty,
                         originalLocationCode = effectiveOriginalLocation,
-                        originalSku = if (effectiveOriginalLocation != null) skuCode else null
+                        originalSku = if (effectiveOriginalLocation != null) skuCode else null,
+                        unit = if (countsPacks) "PACKS" else null
                     )
                 )
                 submitting = false
@@ -1045,6 +1157,8 @@ fun SkuCountDialog(
                 Text(
                     if (initial.editing)
                         "Noticed a mistake? Correct the location and/or quantity below."
+                    else if (countsPacks)
+                        "Packs location — enter the number of loose packs."
                     else
                         "Scan the location, then enter the carton amount.",
                     style = MaterialTheme.typography.bodySmall,
@@ -1080,7 +1194,7 @@ fun SkuCountDialog(
 
                 if (useTally) {
                     Text(
-                        "Current total for $skuCode: $tally cartons",
+                        "Current total for $skuCode: $tally ${if (countsPacks) "packs" else "cartons"}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -1100,7 +1214,7 @@ fun SkuCountDialog(
                             qtyInput = it.filter { c -> c.isDigit() }
                             lastResult = null
                         },
-                        label = { Text("Carton amount") },
+                        label = { Text(if (countsPacks) "Pack amount" else "Carton amount") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                         modifier = Modifier.fillMaxWidth()
@@ -1128,7 +1242,7 @@ fun SkuCountDialog(
                                     if (ok) {
                                         tally = newTotal
                                         tallyInput = ""
-                                        lastResult = "Total for $skuCode now $newTotal"
+                                        lastResult = "Total for $skuCode now $newTotal${if (countsPacks) " pk" else ""}"
                                     }
                                 }
                             },
@@ -1144,7 +1258,7 @@ fun SkuCountDialog(
                                     if (ok) {
                                         tally = newTotal
                                         tallyInput = ""
-                                        lastResult = "Total for $skuCode now $newTotal"
+                                        lastResult = "Total for $skuCode now $newTotal${if (countsPacks) " pk" else ""}"
                                     }
                                 }
                             },
@@ -1169,7 +1283,7 @@ fun SkuCountDialog(
                                 // same location can't be entered twice.
                                 submit(qty) { ok ->
                                     if (ok) successMessage =
-                                        "Location: $trimmedLocation\nSKU: $skuCode\nQty: $qty"
+                                        "Location: $trimmedLocation\nSKU: $skuCode\nQty: $qty${if (countsPacks) " pk" else ""}"
                                 }
                             },
                             enabled = canSave

@@ -303,7 +303,10 @@ fun OpnameLocationsScreen(opnameNumber: String, initialStatus: String?, onBack: 
                                         )
                                     }
                                     if (item.itemSku != null) {
-                                        Text("${item.countedQty}", color = MaterialTheme.colorScheme.primary)
+                                        Text(
+                                            if (item.unit == "PACKS") "${item.countedQty} pk" else "${item.countedQty}",
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(8.dp))
@@ -461,8 +464,11 @@ fun OpnameCountDialog(
     // Whether the scanned location's type allows only one SKU (null until
     // the lookup comes back).
     var singleSku by remember { mutableStateOf<Boolean?>(null) }
+    // A packs location (e.g. PACKS) is counted in loose packs.
+    var countsPacks by remember { mutableStateOf(false) }
     LaunchedEffect(locationInput) {
         singleSku = null
+        countsPacks = false
         val loc = locationInput.trim()
         if (loc.isBlank()) return@LaunchedEffect
         delay(350)
@@ -470,6 +476,7 @@ fun OpnameCountDialog(
             val response = NetworkModule.api.lookupLocationStock(loc)
             if (response.isSuccessful) {
                 singleSku = response.body()?.isSingleSku()
+                countsPacks = response.body()?.countsInPacks == true
             }
         } catch (e: Exception) {
             // Leave singleSku null — falls back to the normal single-shot
@@ -594,14 +601,15 @@ fun OpnameCountDialog(
                         scanned = scannedInput.trim(),
                         countedQty = newTotal,
                         originalLocationCode = effectiveOriginalLocation,
-                        originalSku = effectiveOriginalSku
+                        originalSku = effectiveOriginalSku,
+                        unit = if (countsPacks) "PACKS" else null
                     )
                 )
                 tallySubmitting = false
                 if (response.isSuccessful) {
                     floorTally = newTotal
                     tallyInput = ""
-                    lastResult = "Total for $trimmedSku now $newTotal"
+                    lastResult = "Total for $trimmedSku now $newTotal${if (countsPacks) " pk" else ""}"
                     lastCommittedLocation = locationInput.trim()
                     lastCommittedSku = scannedInput.trim()
                 } else {
@@ -743,7 +751,7 @@ fun OpnameCountDialog(
                     // mode: type an amount, tap + or − to add/remove it from the
                     // running total, saved immediately on each tap.
                     Text(
-                        "Current total for $trimmedSku: $floorTally cartons",
+                        "Current total for $trimmedSku: $floorTally ${if (countsPacks) "packs" else "cartons"}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -796,7 +804,7 @@ fun OpnameCountDialog(
                     OutlinedTextField(
                         value = countedInput,
                         onValueChange = { countedInput = it.filter { c -> c.isDigit() } },
-                        label = { Text("Carton amount") },
+                        label = { Text(if (countsPacks) "Pack amount" else "Carton amount") },
                         singleLine = true,
                         readOnly = isFinished,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
@@ -843,14 +851,16 @@ fun OpnameCountDialog(
                                                     scanned = scannedInput.trim(),
                                                     countedQty = counted,
                                                     originalLocationCode = effectiveOriginalLocation,
-                                                    originalSku = effectiveOriginalSku
+                                                    originalSku = effectiveOriginalSku,
+                                                    unit = if (countsPacks && !markingEmpty) "PACKS" else null
                                                 )
                                             )
                                             submitting = false
                                             if (response.isSuccessful) {
                                                 val body = response.body()
+                                                val unitText = if (countsPacks) " pk" else ""
                                                 lastResult = if (body?.itemSku != null) {
-                                                    "Saved ${body.itemSku} at ${body.locationCode}: $counted"
+                                                    "Saved ${body.itemSku} at ${body.locationCode}: $counted$unitText"
                                                 } else {
                                                     "Marked ${body?.locationCode ?: locationInput.trim()} as empty"
                                                 }
@@ -860,7 +870,7 @@ fun OpnameCountDialog(
                                                 // (so the same location can't be entered twice) and
                                                 // onDismiss refreshes the list behind it.
                                                 successMessage = if (body?.itemSku != null) {
-                                                    "Location: ${body.locationCode}\nSKU: ${body.itemSku}\nQty: $counted"
+                                                    "Location: ${body.locationCode}\nSKU: ${body.itemSku}\nQty: $counted$unitText"
                                                 } else {
                                                     "Location: ${body?.locationCode ?: locationInput.trim()}\nMarked as empty"
                                                 }
@@ -1005,8 +1015,9 @@ fun CountHistoryDialog(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Column {
+                                val unitText = if (entry.unit == "PACKS") " pk" else ""
                                 Text(
-                                    if (entry.delta > 0) "+${entry.delta}" else "${entry.delta}",
+                                    (if (entry.delta > 0) "+${entry.delta}" else "${entry.delta}") + unitText,
                                     fontWeight = FontWeight.Medium,
                                     color = if (entry.delta >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                                 )
@@ -1017,7 +1028,10 @@ fun CountHistoryDialog(
                                 )
                             }
                             Column(horizontalAlignment = Alignment.End) {
-                                Text("→ ${entry.resultingTotal}", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "→ ${entry.resultingTotal}${if (entry.unit == "PACKS") " pk" else ""}",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
                                 Text(
                                     entry.createdAt.replace("T", " ").take(16),
                                     style = MaterialTheme.typography.bodySmall,

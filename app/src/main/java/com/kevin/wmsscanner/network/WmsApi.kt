@@ -32,12 +32,16 @@ data class OpnameLocationRow(val locationCode: String, val total: Int, val count
 data class OpnameCountRequest(
     val locationCode: String,
     val scanned: String,
+    // In loose packs when unit = "PACKS" (a packs location), else cartons.
     val countedQty: Int,
     // Only sent when editing an already-saved line and the location or SKU
     // was changed — lets the server find and update that original row
     // instead of inserting a new one alongside it.
     val originalLocationCode: String? = null,
-    val originalSku: String? = null
+    val originalSku: String? = null,
+    // "PACKS" at a packs location (see LocationStockLookupResponse.countsInPacks);
+    // null = cartons. The server refuses a packs location counted without it.
+    val unit: String? = null
 )
 data class OpnameCountResponse(
     val itemSku: String? = null,
@@ -58,7 +62,10 @@ data class LocationStockLookupResponse(
     val hasPosition: Boolean? = null,
     val pickable: Boolean? = null,
     val isReceiving: Boolean? = null,
-    val isStaging: Boolean? = null
+    val isStaging: Boolean? = null,
+    // Holds loose packs, not cartons (e.g. PACKS): stock opname counts packs
+    // here. Null from servers older than loose packs.
+    val countsInPacks: Boolean? = null
 )
 data class PickResponse(val locationCode: String, val itemSku: String, val quantityPicked: Int)
 // stagingLocationCode / receivingLocationCode on these requests: the
@@ -291,7 +298,9 @@ data class OpnameReportItem(
     val itemName: String,
     val countedQty: Int,
     val countedAt: String?,
-    val countedByUsername: String?
+    val countedByUsername: String?,
+    // "PACKS": a packs-location line — countedQty is loose packs.
+    val unit: String? = null
 )
 data class OpnameReportLocation(val locationCode: String, val counted: Boolean, val items: List<OpnameReportItem>)
 data class OpnameReportResponse(
@@ -306,7 +315,9 @@ data class OpnameCountHistoryEntry(
     val delta: Int,
     val resultingTotal: Int,
     val username: String?,
-    val createdAt: String
+    val createdAt: String,
+    // "PACKS": delta / resultingTotal are loose packs.
+    val unit: String? = null
 )
 // The staging location an SO's picks go to, remembered on the server.
 data class PickToResponse(val code: String?)
@@ -331,8 +342,21 @@ data class StagingBreakdownResponse(
     val markedBySo: List<MarkedSoRow>? = null,
     val markedByTambahan: List<MarkedTambahanRow>? = null
 )
-data class SkuLocationRow(val locationCode: String, val locationType: String, val quantity: Int)
-data class SkuLocationsResponse(val sku: String, val locations: List<SkuLocationRow>)
+// loosePacks: loose packs at a packs location (quantity is 0 there); listed
+// only with all=1. packsPerCarton: the item's packs per carton.
+// inTotalStock false: not counted in Total Stock (null from older servers).
+data class SkuLocationRow(
+    val locationCode: String,
+    val locationType: String,
+    val quantity: Int,
+    val loosePacks: Int = 0,
+    val inTotalStock: Boolean? = null
+)
+data class SkuLocationsResponse(
+    val sku: String,
+    val locations: List<SkuLocationRow>,
+    val packsPerCarton: Int? = null
+)
 
 interface WmsApi {
     @GET("api/location-stock/by-sku")
